@@ -1,9 +1,9 @@
 bl_info = {
     "name": "Command line Render Launcher (with Custom Output & Frame Range SubScenes)",
     "author": "Benn",
-    "version": (5, 0, 0),
+    "version": (5, 1, 0),
     "blender": (2, 80, 0),
-    "location": "Render Properties > CLI Render",
+    "location": "Render Properties > ╠══ CLI RENDER ══╣",
     "description": "Batch render with custom output, SubScene presets, subfolder support, and sequential/parallel option. No camera override, no temp file logic, always fully responsive.",
     "category": "Render",
 }
@@ -138,11 +138,16 @@ class FRAMERANGE_OT_update(bpy.types.Operator):
         return {'FINISHED'}
 
 class RENDER_PT_cli_launcher(bpy.types.Panel):
-    bl_label = "CLI Render"
+    bl_label = " "
     bl_idname = "RENDER_PT_cli_launcher"
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
     bl_context = "render"
+
+    def draw_header(self, context):
+        self.layout.alert = True
+        self.layout.label(text="╠══ CLI RENDER ══╣")
+
     def draw(self, context):
         layout = self.layout
         scene = context.scene
