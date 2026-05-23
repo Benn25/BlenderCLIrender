@@ -22,6 +22,11 @@ A Blender addon for batch rendering via command line launcher.
 - Suggest what a standard/clean file structure should look like for that project type
 - Wait for my explicit approval before moving, renaming, or creating any files
 
+### Blender addon file structure rules
+- Single file, under 500 lines → keep as one `.py` file, no folder, keep the addon name as the filename
+- Single file, over 500 lines → convert to a folder with `__init__.py`, `operators.py`, `ui.py`, `utils.py`
+- Already multi-file → wrap in a folder if not already done
+
 ### General
 - Keep explanations simple — assume I am not a developer by trade
 - Never ask me to run commands in a terminal
