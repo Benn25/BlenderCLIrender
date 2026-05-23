@@ -1,6 +1,6 @@
 bl_info = {
     "name": "Command line Render Launcher (with Custom Output & Frame Range SubScenes)",
-    "author": "Benn",
+    "author": "Benjamin DAVOULT",
     "version": (5, 1, 0),
     "blender": (2, 80, 0),
     "location": "Render Properties > ╠══ CLI RENDER ══╣",
