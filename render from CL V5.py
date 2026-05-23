@@ -10,6 +10,7 @@ bl_info = {
 
 import bpy
 import os
+import shlex
 import subprocess
 import sys
 import threading
@@ -216,10 +217,9 @@ class RENDER_OT_cli_launcher(bpy.types.Operator):
             if sys.platform == "win32":
                 p = subprocess.Popen(render_cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
             elif sys.platform == "darwin":
-                osa_cmd = [
-                    "osascript", "-e",
-                    f'tell app "Terminal" to do script "{" ".join(render_cmd)}"'
-                ]
+                shell_cmd = " ".join(shlex.quote(a) for a in render_cmd)
+                escaped = shell_cmd.replace('\\', '\\\\').replace('"', '\\"')
+                osa_cmd = ["osascript", "-e", f'tell app "Terminal" to do script "{escaped}"']
                 p = subprocess.Popen(osa_cmd)
             else:
                 try:
@@ -236,9 +236,19 @@ class RENDER_OT_cli_launcher(bpy.types.Operator):
             return {'CANCELLED'}
 
         use_subscenes = getattr(scene, "use_presets", True)
+        checked = [entry for entry in scene.framerange_entries if entry.selected]
+        if use_subscenes and checked:
+            bad = [e.name for e in checked if e.start >= e.end]
+            if bad:
+                self.report({'ERROR'}, f"Start >= End in SubScene(s): {', '.join(bad)}")
+                return {'CANCELLED'}
+        elif not (use_subscenes and checked):
+            if scene.cli_start_frame >= scene.cli_end_frame:
+                self.report({'ERROR'}, f"Start frame ({scene.cli_start_frame}) must be less than end frame ({scene.cli_end_frame})")
+                return {'CANCELLED'}
+
         preset_use_subfolder = getattr(scene, "preset_use_subfolder", False)
         sequential = getattr(scene, "sequential_render", True)
-        checked = [entry for entry in scene.framerange_entries if entry.selected]
         cmds = []
 
         video_extensions = {'.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv', '.webm',
@@ -294,7 +304,6 @@ class RENDER_OT_cli_launcher(bpy.types.Operator):
             cmds.append(render_cmd)
 
         if sequential and len(cmds) > 1:
-            import threading
             thread = threading.Thread(target=self.run_sequential, args=(cmds,))
             thread.start()
         else:
@@ -302,10 +311,9 @@ class RENDER_OT_cli_launcher(bpy.types.Operator):
                 if sys.platform == "win32":
                     subprocess.Popen(render_cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
                 elif sys.platform == "darwin":
-                    osa_cmd = [
-                        "osascript", "-e",
-                        f'tell app "Terminal" to do script "{" ".join(render_cmd)}"'
-                    ]
+                    shell_cmd = " ".join(shlex.quote(a) for a in render_cmd)
+                    escaped = shell_cmd.replace('\\', '\\\\').replace('"', '\\"')
+                    osa_cmd = ["osascript", "-e", f'tell app "Terminal" to do script "{escaped}"']
                     subprocess.Popen(osa_cmd)
                 else:
                     try:
