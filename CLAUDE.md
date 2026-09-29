@@ -1,6 +1,11 @@
 # Project: BlenderCLIrender
 A Blender addon for batch rendering via command line launcher.
 
+- Current version: **5.5.0**, a multi-file Blender extension in `cli_render_launcher/`
+  (see README.md for the file-by-file layout; tests in `tests/`).
+- The add-on is also sold (free) on Gumroad. **Read GUMROAD.md before touching the listing,
+  and update it after any change to the listing.**
+
 # My Working Preferences
 
 ## Who I am
