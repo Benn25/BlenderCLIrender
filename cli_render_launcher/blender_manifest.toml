@@ -1,0 +1,10 @@
+schema_version = "1.0.0"
+id = "cli_render_launcher"
+name = "Command Line Render Launcher"
+tagline = "Batch render via CLI: SubScene queue, parallel jobs, snapshots"
+version = "5.5.0"
+type = "add-on"
+blender_version_min = "4.2.0"
+maintainer = "Benn"
+license = ["SPDX:GPL-3.0-or-later"]
+tags = ["Render"]
