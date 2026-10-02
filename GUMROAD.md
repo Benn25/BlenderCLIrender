@@ -3,7 +3,7 @@
 Record of the Gumroad product page for this add-on, so future sessions can update it
 without re-discovering everything. **Update this file whenever the listing changes.**
 
-Last updated: 2026-10-02 (listing prepared for 5.12.2, not saved yet: the owner reviews and saves).
+Last updated: 2026-10-02 (listing prepared for 5.12.3, not saved yet: the owner reviews and saves).
 
 ## Product
 
@@ -14,7 +14,7 @@ Last updated: 2026-10-02 (listing prepared for 5.12.2, not saved yet: the owner 
 | Name | render from command line (Blender addon) |
 | Summary | A Blender extension (.zip): drag it into Blender to install. |
 | Price | **Free** — pay what you want, $0 minimum, $1.69 suggested. *Keep it free* (owner's decision). |
-| Content (download) | `cli_render_launcher-5.12.2.zip` only (older zips and the old `.py` removed) |
+| Content (download) | `cli_render_launcher-5.12.3.zip` only (older zips and the old `.py` removed) |
 | Size (additional details) | filled in automatically by Gumroad from the files |
 
 ## Images
@@ -30,7 +30,7 @@ Last updated: 2026-10-02 (listing prepared for 5.12.2, not saved yet: the owner 
 
 All images live locally in `D:\blender\addon making\CLI render\screenshots\` (backups of the
 old V6 cover/thumbnail there too). **Known gap:** the cover, thumbnail and panel screenshots
-still show the header **v5.3.0** — they should be retaken with 5.12.2 installed. The new
+still show the header **v5.3.0** — they should be retaken with 5.12.3 installed. The new
 "queue window" section has a `[[IMG:queue_window]]` placeholder waiting for a screenshot.
 
 ## Description — structure and claims
