@@ -15,7 +15,7 @@ import tempfile
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SRC = (sorted(glob.glob(os.path.join(HERE, "..", "V*"))) or [os.path.join(HERE, "..", "cli_render_launcher")])[-1]
+SRC = (sorted(glob.glob(os.path.join(HERE, "..", "V*")), key=lambda p: [int(x) for x in os.path.basename(p)[1:].split(".") if x.isdigit()]) or [os.path.join(HERE, "..", "cli_render_launcher")])[-1]
 sys.path.insert(0, SRC)
 
 import runner  # noqa: E402

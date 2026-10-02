@@ -12,7 +12,7 @@ except Exception:
     pass
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SRC = (sorted(glob.glob(os.path.join(HERE, "..", "V*"))) or [os.path.join(HERE, "..", "cli_render_launcher")])[-1]
+SRC = (sorted(glob.glob(os.path.join(HERE, "..", "V*")), key=lambda p: [int(x) for x in os.path.basename(p)[1:].split(".") if x.isdigit()]) or [os.path.join(HERE, "..", "cli_render_launcher")])[-1]
 sys.path.insert(0, SRC)
 
 import gpu_monitor as G  # noqa: E402
@@ -62,7 +62,9 @@ msgs = [m for _ in range(15) for m in low.check()]
 check("one alarm, no alarm/all-clear loop", len(msgs), 1)
 
 print("\nOff / unavailable")
-off = G.GpuWatch(threshold=0, reader=scripted([99]))
+# 5.12+: check() still samples with the alarm off (the VRAM gauge needs the
+# reading), so the scripted reader must have more than one value.
+off = G.GpuWatch(threshold=0, reader=scripted([99, 99, 99]))
 check("threshold 0: no header, no alarm", (off.describe(), off.check()), (None, []))
 none = G.GpuWatch(threshold=66, reader=lambda: None)
 check("no nvidia-smi: says so", none.describe().startswith("GPU memory: not watched"), True)
