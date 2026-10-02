@@ -23,7 +23,7 @@ not saved yet: the 5.13 overrides text and image (heading, list item, "SubScene 
 | Where | Image | Notes |
 |---|---|---|
 | Cover | `cli_render_cover.png` (1600×900) | Blender-style card: "v5.3 · Blender add-on", red CLI RENDER title, 4 selling points, real panel on the right. |
-| Thumbnail | `cli_render_thumbnail.png` (1000×1000, shown 600×600) | The real panel as the owner arranged it (SubScenes scene1 / opening / scene2 / ending). |
+| Thumbnail | `cli_render_thumbnail.png` (1000×1000) | Since 2026-10-03, in the style of the owner's other thumbnails: "CLI / Render" in Quicksand Bold with a black outline, Blender logo with a white glow cut by the right edge, three render consoles behind. Source: `screenshots/raw/thumbnail_source.html`. Previous one (the real panel): `old_thumbnail_v5.3_panel_backup.png`. |
 | Description | `cli_render_panel.png` | Full panel, demo SubScenes intro/closeup/orbit/outro. |
 | Description | `cli_render_subscenes.png` | Close-up of the SubScenes list. |
 | Description | `cli_render_overrides.png` | 5.13 panel: row icons (render result / camera / monkey), Overrides box open on "ending". |
