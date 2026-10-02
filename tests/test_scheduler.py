@@ -60,8 +60,11 @@ class FakeRender:
     memory at a given frame (on the first, not-alone attempt)."""
 
     def __init__(self, world, job, load=10, frame=30, mem_load=30, mem_render=25,
-                 oom_at=None, oom_even_alone=False):
+                 oom_at=None, oom_even_alone=False, gap=0, mem_gap=None):
         self.w, self.job = world, job
+        # Cycles frees memory between frames: the first GAP s of each frame
+        # use only MEM_GAP (the dip that fooled admission in 5.12.1).
+        self.gap, self.mem_gap = gap, mem_gap
         self.load, self.frame_s = load, frame
         self.mem_load, self.mem_render = mem_load, mem_render
         self.oom_at = oom_at if (oom_even_alone or "alone" not in job.get("note", "")) else None
@@ -82,8 +85,12 @@ class FakeRender:
         return idx, (el - self.load) - idx * self.frame_s
 
     def mem(self):
-        idx, _ = self._progress()
-        return self.mem_load if idx is None else self.mem_render
+        idx, into = self._progress()
+        if idx is None:
+            return self.mem_load
+        if self.mem_gap is not None and into < self.gap:
+            return self.mem_gap
+        return self.mem_render
 
     def status(self):
         idx, into = self._progress()
@@ -187,6 +194,30 @@ check("it resumed at the frame it was on, not from the start", first_resume > 1,
 check("resume command starts there (-s)", resumed[0]["cmd"][resumed[0]["cmd"].index("-s") + 1],
       str(first_resume))
 check("every frame of b rendered exactly once", sorted(w.rendered["b"]), F(1, 6))
+
+print("\nAdmission ignores the dips between frames (5.12.1 thrashed on a real card)")
+dips = dict(mem_load=20, mem_render=28, gap=4, mem_gap=2, frame=30)
+w, res, _ = run_queue([("a", F(1, 12)), ("b", F(1, 12)), ("c", F(1, 12))], parallel=3,
+                      profiles={n: dict(dips) for n in "abc"})
+check("all finished OK", [c for _n, c, _t, _e in res], [0, 0, 0])
+check("never 3 at once (20+28+28 >= 66, dips or not)", w.max_parallel <= 2, True)
+check("no render ever stopped", any("stopping" in l for l in w.log), False)
+check("the wait names the recent peak",
+      any("in the last" in l for l in w.log if l.startswith("waiting")), True)
+
+print("\nAfter a memory stop: one fewer at a time for the rest of the queue")
+w, res, launched = run_queue([(n, F(1, 10)) for n in "abcd"], parallel=3,
+                             profiles={n: dict(mem_load=14, mem_render=14) for n in "abcd"},
+                             extra_at=[(100, 30), (130, 0)])
+check("all finished OK", [c for _n, c, _t, _e in res], [0, 0, 0, 0])
+stops = [l for l in w.log if "stopping" in l]
+check("exactly one render stopped", len(stops), 1)
+check("the new limit is announced",
+      any(l.startswith("limit") and "at most 2" in l for l in w.log), True)
+later = [live for t, _n, _f, live in w.starts if t > 100]
+check("never 3 at once after the stop", bool(later) and max(later) <= 2, True)
+check("every frame rendered exactly once",
+      all(sorted(w.rendered[n]) == F(1, 10) for n in "abcd"), True)
 
 print("\nNever stops the last running render")
 w, res, _ = run_queue([("solo", F(1, 3))], parallel=1, base=85,

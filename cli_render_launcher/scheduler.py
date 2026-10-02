@@ -8,11 +8,17 @@ Rules (GPU memory = the whole card, read through gpu_monitor):
              render loads, so a reading taken too early would lie.
              With nothing running, a job always starts (other programs
              using the card must not deadlock the queue).
+             The level compared is the PEAK of the last PEAK_WINDOW_S: Cycles
+             frees memory between frames, and a dip read at that moment let
+             a job start into a card that was full a second later (5.12.2).
   Stop       Above the stop level (default 90%) with 2+ jobs running, one
              job is stopped - a still-loading one first (no work lost),
              else the one whose current frame started last - and put back
              at the FRONT of the queue to resume at that frame. Never the
              last running job; STOP_COOLDOWN_S between stops.
+             After a stop with N jobs running, the queue runs at most N-1 at
+             a time from then on: N did not fit, so trying N again would
+             only stop a job again and reload its scene (5.12.2).
   Out of     The job's console kills Blender on the out-of-memory message
   memory     (so no broken frame gets saved). The job goes to the END of
              the queue, marked "alone": it starts only when nothing else
@@ -35,6 +41,7 @@ A handle offers:  poll() -> None while running, else the exit code
                                "since", "resume"}
                   request_stop()
 """
+import collections
 import time
 
 STOP_CODE = 75          # the job's console stopped Blender on request
@@ -44,6 +51,7 @@ TICK_S = 0.5
 GPU_POLL_S = 2.0
 SETTLE_S = 15.0
 STOP_COOLDOWN_S = 20.0
+PEAK_WINDOW_S = 60.0    # admission looks at the highest reading of this long
 OOM_ALONE_RETRIES = 1
 
 
@@ -130,6 +138,10 @@ class Scheduler:
         self.last_stop = -1e9
         self.last_gpu_read = -1e9
         self.gpu_pct = None
+        self.gpu_recent = collections.deque()   # (time, pct) inside PEAK_WINDOW_S
+        # Set by a memory stop: at most this many jobs at once, for the rest
+        # of the queue (None = only the launches' own limits).
+        self.mem_cap = None
         self.waiting_said = None
 
     # -- GPU ---------------------------------------------------------------
@@ -144,7 +156,16 @@ class Scheduler:
             self.gpu_pct = None
         else:
             self.gpu_pct = max(100.0 * u / t for _i, _n, u, t in gpus if t > 0)
+            self.gpu_recent.append((now, self.gpu_pct))
+        while self.gpu_recent and now - self.gpu_recent[0][0] > PEAK_WINDOW_S:
+            self.gpu_recent.popleft()
         return self.gpu_pct
+
+    def _peak_pct(self, pct):
+        """The highest reading of the last PEAK_WINDOW_S (at least `pct`)."""
+        if pct is None:
+            return None
+        return max([pct] + [p for _t, p in self.gpu_recent])
 
     # -- batches -----------------------------------------------------------
 
@@ -199,16 +220,19 @@ class Scheduler:
             return not self.running
         if not self.running:
             return True
+        if self.mem_cap is not None and len(self.running) >= self.mem_cap:
+            return False                       # N did not fit: N-1 from now on
         if pct is None:
             return True                        # no GPU info: plain parallel queue
         if self.clock() - self.last_start < SETTLE_S:
             return False
         if any(h.status().get("phase") != "render" for _j, h, _t in self.running):
             return False                       # someone is still loading
-        if pct >= self.admit_pct:
+        peak = self._peak_pct(pct)
+        if peak >= self.admit_pct:
             if self.waiting_said != nxt.name:
-                self.say("waiting   %s: GPU memory at %d%%, starts below %d%%"
-                         % (nxt.name, pct, self.admit_pct))
+                self.say("waiting   %s: GPU memory up to %d%% in the last %ds, starts below %d%%"
+                         % (nxt.name, peak, PEAK_WINDOW_S, self.admit_pct))
                 self.waiting_said = nxt.name
             return False
         return True
@@ -254,6 +278,11 @@ class Scheduler:
         where = "at frame %s" % st.get("frame") if st.get("frame") is not None else "while loading"
         self.say("!! GPU memory %d%%: stopping %s %s to free memory - it will resume later"
                  % (pct, job.name, where))
+        cap = max(1, len(candidates) - 1)
+        if self.mem_cap is None or cap < self.mem_cap:
+            self.mem_cap = cap
+            self.say("limit     %d job(s) did not fit in GPU memory: at most %d at a time "
+                     "for the rest of this queue" % (len(candidates), cap))
 
     def _finished(self, job, handle, started, code):
         took = self.clock() - started
