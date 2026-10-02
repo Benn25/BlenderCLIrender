@@ -601,7 +601,24 @@ def _pause(message):
         pass
 
 
+def _never_crash_on_output():
+    """Characters the output cannot show are replaced, never fatal.
+
+    The VRAM gauge and the logo print block characters. A real Windows console
+    shows them, but a pipe, a log file or a non-UTF-8 terminal (macOS/Linux
+    with a C locale) cannot encode them, and the UnicodeEncodeError killed the
+    watcher - so the render failed over a progress bar. Measured: every job
+    exited with code 1 under a cp1252 pipe before this (5.12.1).
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace")
+        except Exception:
+            pass
+
+
 def main(argv):
+    _never_crash_on_output()
     args = argv[argv.index("--") + 1:] if "--" in argv else argv[1:]
 
     if args and args[0] == "--watch":
