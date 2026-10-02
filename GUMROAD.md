@@ -3,9 +3,8 @@
 Record of the Gumroad product page for this add-on, so future sessions can update it
 without re-discovering everything. **Update this file whenever the listing changes.**
 
-Last updated: 2026-10-03 (saved by the owner with 5.12.x text and the 5.13.0 zip).
-**Not yet on the page:** the 5.13 SubScene overrides (samples, every N frames, camera) -
-the description still says "Version 5.12".
+Last updated: 2026-10-03. Saved by the owner: 5.12.x text and the 5.13.0 zip. Prepared after that,
+not saved yet: the 5.13 overrides text and image (heading, list item, "SubScene overrides" section).
 
 ## Product
 
@@ -27,6 +26,7 @@ the description still says "Version 5.12".
 | Thumbnail | `cli_render_thumbnail.png` (1000×1000, shown 600×600) | The real panel as the owner arranged it (SubScenes scene1 / opening / scene2 / ending). |
 | Description | `cli_render_panel.png` | Full panel, demo SubScenes intro/closeup/orbit/outro. |
 | Description | `cli_render_subscenes.png` | Close-up of the SubScenes list. |
+| Description | `cli_render_overrides.png` | 5.13 panel: row icons (render result / camera / monkey), Overrides box open on "ending". |
 | Description | `cli_render_output_off.png` | Output section with Save Output off. |
 | Description | `queue_details_3outputs.jpg` | Queue window, "second part" open: mp4 + single-layer EXR list + jpg thumbnails, 2 view layers. Spares: `queue_overview_during.jpg`, `queue_job_details_during.jpg`, `queue_all_done.jpg`. |
 | Description | `console_banner_preview.png` | The render console banner (logo + CLI RENDER + by Benjamin Davoult). |
@@ -41,14 +41,15 @@ screenshots (2026-10-02, 5.12.3, crystals3.blend) are new and current.
 1. Intro (bold): render from the command line in the background while you keep working.
    Second line: separate renders in their own consoles; you can close Blender, the queue keeps going.
 2. Image: full panel.
-3. **🚀 Version 5.12 — big update** — "grown a lot since this page was first written", free update
-   in the Gumroad library. List (5.12 items first): queue window · one queue per .blend ·
+3. **🚀 Version 5.13 — big update** — "grown a lot since this page was first written", free update
+   in the Gumroad library. List (newest first): SubScene overrides (5.13) · queue window · one queue per .blend ·
    renders the scene you launched from · VRAM gauge · clean render console · GPU memory protection · out-of-memory
    recovery · failed render keeps its console open · SubScenes at once · queue runs on its own ·
    render the current state · compositor-only renders · a subfolder per SubScene · cleaner file
    names · safety checks · proper Blender extension · macOS & Linux fixes.
 4. **What's in the panel** (Properties › Render, red CLI RENDER panel):
-   Name & frame range · SubScenes: batch your shots (+ image) · Output & file names ·
+   Name & frame range · SubScenes: batch your shots (+ image) · SubScene overrides (samples /
+   every N frames / camera, "your .blend is never changed", row icons; + image) · Output & file names ·
    Compositor-only renders (+ image) · Render the current state · Safety checks.
 4b. **The queue window** (5.12) — image `queue_details_3outputs.jpg` + bullets (jobs, progress,
    ETA, log, rendered frames; 127.0.0.1 only, read-only; on by default, switch in preferences).
