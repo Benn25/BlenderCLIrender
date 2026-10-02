@@ -34,6 +34,24 @@ class CLIRENDER_AP_preferences(bpy.types.AddonPreferences):
         default=True,
     )
 
+    queue_window: bpy.props.BoolProperty(
+        name="Queue window in the browser",
+        description=(
+            "Show the render queue as a page in your browser, served from the "
+            "queue itself on localhost. The queue's own console window is then "
+            "hidden - it would only repeat what the window shows - and what it "
+            "would have printed goes to a log beside the render logs. Each "
+            "render still gets its own console. Off: no window, console as before"),
+        default=True,
+    )
+    queue_window_open: bpy.props.BoolProperty(
+        name="Open it automatically",
+        description=(
+            "Open the browser when a queue starts. Off: the address is printed "
+            "in the queue console and you open it when you want it"),
+        default=True,
+    )
+
     gpu_warn_percent: bpy.props.IntProperty(
         name="GPU memory alarm",
         description=(
@@ -77,6 +95,17 @@ class CLIRENDER_AP_preferences(bpy.types.AddonPreferences):
         sub.scale_y = 0.85
         sub.label(text="A render that fails keeps its console open, so you can see why.",
                   icon='ERROR')
+        layout.separator()
+        layout.prop(self, "queue_window")
+        if self.queue_window:
+            sub = layout.column(align=True)
+            sub.scale_y = 0.85
+            sub.prop(self, "queue_window_open")
+            sub.label(text="The queue's own console is hidden; its output goes to a log.",
+                      icon='INFO')
+            sub.label(text="Each render keeps its own console. 127.0.0.1 only.",
+                      icon='BLANK1')
+
         layout.separator()
         row = layout.row()
         row.prop(self, "gpu_warn_percent")

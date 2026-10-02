@@ -44,12 +44,125 @@ def _tree_has_file_output(tree, seen):
 def compositor_writes_files(scene):
     """True when the compositor runs and holds at least one active File
     Output node. Read-only: the nodes are never modified."""
+    return bool(_compositor_tree(scene)) and _tree_has_file_output(
+        _compositor_tree(scene), set())
+
+
+def _compositor_tree(scene):
     if not scene.render.use_compositing:
-        return False
+        return None
     tree = getattr(scene, "compositing_node_group", None)        # 5.0+
     if tree is None and getattr(scene, "use_nodes", False):
         tree = getattr(scene, "node_tree", None)                 # 4.x
-    return _tree_has_file_output(tree, set())
+    return tree
+
+
+def scene_info(scene):
+    """What is being rendered, for the queue window's header.
+
+    Captured in Blender because the queue process never opens the .blend. The
+    view layers are the point: "which layers am I actually rendering" is not
+    answerable from the command line, and a layer accidentally left disabled
+    is the kind of thing worth seeing before a 2700-frame job finishes.
+    """
+    img = scene.render.image_settings
+    engine = scene.render.engine
+    samples = None
+    if engine == 'CYCLES' and hasattr(scene, "cycles"):
+        samples = getattr(scene.cycles, "samples", None)
+    else:
+        samples = getattr(scene.eevee, "taa_render_samples", None) if hasattr(scene, "eevee") else None
+    pct = scene.render.resolution_percentage
+    return {
+        # the window tells launches apart by it once a second scene joins
+        "name": scene.name,
+        "engine": engine,
+        "res": "%d x %d" % (scene.render.resolution_x * pct // 100,
+                            scene.render.resolution_y * pct // 100),
+        "res_pct": pct,
+        "format": getattr(img, "file_format", ""),
+        "media": getattr(img, "media_type", ""),
+        "depth": getattr(img, "color_depth", ""),
+        "color": getattr(img, "color_mode", ""),
+        "samples": samples,
+        "fps": scene.render.fps,
+        "step": max(1, scene.frame_step),
+        "view_layers": [{"name": vl.name, "on": bool(vl.use)}
+                        for vl in scene.view_layers],
+        "save_output": scene_saves_output(scene),
+    }
+
+
+def _slot_prefixes(node):
+    """Path prefixes one File Output node writes, as `folder/start-of-name`.
+
+    Blender appends the frame number to whatever the slot is called, so a slot
+    named `Crusher_####` writes `Crusher_0481.jpg`: cutting at the first '#'
+    leaves exactly the prefix `output_files()` already globs for, the same
+    shape as the main render's -o value.
+
+    `directory` is resolved through bpy.path.abspath because '//relative'
+    paths are the norm here, and the viewer needs a real path to look in.
+    """
+    directory = bpy.path.abspath(getattr(node, "directory", "") or "")
+    if not directory:
+        return []
+    items = list(getattr(node, "file_output_items", None) or [])
+    names = [getattr(it, "name", "") for it in items] if items else []
+    if not names:
+        names = [getattr(node, "file_name", "") or ""]
+    out = []
+    node_label = (getattr(node, "label", "") or getattr(node, "name", "")
+                  or "File Output")
+    for name in names:
+        # Cut at the first '#' OR '{': '####' is the frame number, and names
+        # like '{blend_name}' are template tokens Blender expands at write
+        # time. Measured on 5.2.2: a freshly added File Output node has NO
+        # file_output_items and its file_name is literally '{blend_name}', so
+        # a prefix built without this would never match a single file.
+        stem = (name or "")
+        for cut in ("#", "{"):
+            stem = stem.split(cut)[0]
+        # An empty stem is fine: it globs the node's whole folder, which is
+        # where those files go. Over-inclusive beats listing nothing.
+        # Labelled with the node (and slot, when it has one) so the window can
+        # say WHICH output a folder belongs to instead of listing bare paths.
+        label = node_label
+        if name and len(names) > 1:
+            label = "%s  ·  %s" % (node_label, name)
+        out.append({"prefix": os.path.join(directory, stem), "label": label})
+    return out
+
+
+def compositor_output_prefixes(scene):
+    """Every path prefix the active File Output nodes write to.
+
+    The main render's -o is not the whole story: with Save Output off these
+    nodes are the ONLY thing that writes, and the viewer listed nothing at all
+    for such a render before 5.9.0.
+    """
+    tree = _compositor_tree(scene)
+    found, seen = [], set()
+
+    def walk(t):
+        if t is None or t.name_full in seen:
+            return
+        seen.add(t.name_full)
+        for node in t.nodes:
+            if node.mute:
+                continue
+            if node.bl_idname == 'CompositorNodeOutputFile':
+                found.extend(_slot_prefixes(node))
+            walk(getattr(node, "node_tree", None))
+
+    walk(tree)
+    # Stable order, no duplicates: two slots can share a folder.
+    seen_prefix, result = set(), []
+    for entry in sorted(found, key=lambda e: (e["prefix"], e["label"])):
+        if entry["prefix"] and entry["prefix"] not in seen_prefix:
+            seen_prefix.add(entry["prefix"])
+            result.append(entry)
+    return result
 
 
 def scene_is_video(scene):
@@ -61,9 +174,60 @@ def scene_is_video(scene):
 # Launching
 # --------------------------------------------------------------------------
 
-def open_in_terminal(cmd, minimized=False):
-    """Start `cmd` in its own terminal window, detached from Blender."""
+def _free_port():
+    """Ask the OS for a free local port and hand it to the queue.
+
+    Blender picks it rather than the queue so the URL is known HERE, and can be
+    reported in the status bar: with the queue console hidden there is nowhere
+    else the address could appear. The queue falls back to any free port if
+    this one is taken in the moment between closing and re-binding it, so a
+    lost race costs the status-bar link, never the render.
+    """
+    import socket
+    try:
+        with socket.socket() as sock:
+            sock.bind(("127.0.0.1", 0))
+            return sock.getsockname()[1]
+    except OSError:
+        return 0
+
+
+def _open_queue_log(path):
+    """A file for a hidden queue's output, or None if it cannot be made.
+
+    Everything the queue console would have shown goes here instead - the
+    window address, which job started when, GPU alarms, the final tally - so
+    hiding the console loses nothing, it just stops it interrupting.
+    """
+    if not path:
+        return None
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        return open(path, "a", encoding="utf-8", buffering=1)
+    except OSError:
+        return None
+
+
+def open_in_terminal(cmd, minimized=False, hidden=False, log_path=None):
+    """Start `cmd` in its own terminal window, detached from Blender.
+
+    `hidden` gives it no console at all - used when the queue window is on,
+    because the queue's own console then shows nothing the window does not.
+    SW_SHOWMINNOACTIVE was not enough: Windows restores a minimized console
+    often enough that it still interrupts.
+
+    A hidden process has NO usable stdout, so one is always provided: without
+    it the first `print()` in the queue raises and the whole queue dies with
+    nowhere to report it.
+    """
     if sys.platform == "win32":
+        if hidden:
+            out = _open_queue_log(log_path)
+            return subprocess.Popen(
+                cmd, creationflags=subprocess.CREATE_NO_WINDOW,
+                stdout=out or subprocess.DEVNULL,
+                stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL)
         info = None
         if minimized:
             info = subprocess.STARTUPINFO()
@@ -71,6 +235,12 @@ def open_in_terminal(cmd, minimized=False):
             info.wShowWindow = 7            # SW_SHOWMINNOACTIVE
         return subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE,
                                 startupinfo=info)
+    if hidden:
+        out = _open_queue_log(log_path)
+        return subprocess.Popen(cmd, start_new_session=True,
+                                stdout=out or subprocess.DEVNULL,
+                                stderr=subprocess.STDOUT,
+                                stdin=subprocess.DEVNULL)
     if sys.platform == "darwin":
         shell_cmd = " ".join(shlex.quote(a) for a in cmd)
         escaped = shell_cmd.replace('\\', '\\\\').replace('"', '\\"')
@@ -92,22 +262,33 @@ def runner_command(jobfile):
             "--python", RUNNER, "--", jobfile]
 
 
-def launch_queue(job_list, parallel, cleanup, level='CLEAN', gpu_warn=66, gpu_stop=90):
+def launch_queue(job_list, parallel, cleanup, level='CLEAN', gpu_warn=66, gpu_stop=90,
+                 web_ui=True, web_ui_open=True, web_ui_port=0, queue_log=None,
+                 scene_info_dict=None, blend=None):
     spec = {
+        # The original .blend: later launches of the same file join this
+        # queue instead of opening a second one (jobs.offer_to_queue).
+        "blend": blend,
         "jobs": job_list,
         "parallel": parallel,
         "level": level,
         "gpu_warn": gpu_warn,
         "gpu_stop": gpu_stop,
+        "web_ui": web_ui,
+        "web_ui_open": web_ui_open,
+        "web_ui_port": web_ui_port,
+        "scene": scene_info_dict,
         "console_per_job": sys.platform == "win32",
         "cleanup": cleanup,
     }
     fd, jobfile = tempfile.mkstemp(prefix="cli_render_queue_", suffix=".json")
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
         json.dump(spec, fh, ensure_ascii=False, indent=1)
-    # On Windows the queue's own console starts minimized: each render still
-    # opens its own console window, exactly as before.
-    open_in_terminal(runner_command(jobfile), minimized=True)
+    # With the queue window on, the queue's own console is hidden entirely:
+    # it would only repeat what the window already shows. Each render still
+    # opens its own console (banner, progress, VRAM gauge) exactly as before.
+    open_in_terminal(runner_command(jobfile), minimized=True,
+                     hidden=bool(web_ui), log_path=queue_log)
 
 
 # --------------------------------------------------------------------------
@@ -327,7 +508,13 @@ class RENDER_OT_cli_launcher(bpy.types.Operator):
         keep_logs = prefs.keep_logs if prefs else True
         gpu_warn = prefs.gpu_warn_percent if prefs else 66
         gpu_stop = prefs.gpu_stop_percent if prefs else 90
+        web_ui = prefs.queue_window if prefs else True
+        web_ui_open = prefs.queue_window_open if prefs else True
         run_stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        # Same for every job in the queue: they all render the one scene, so
+        # the File Output nodes are the same nodes writing to the same folders.
+        comp_prefixes = compositor_output_prefixes(scene)
+        info = scene_info(scene)
         blend_dir, blend_file = os.path.split(blend_path)
         log_dir = os.path.join(blend_dir, LOG_FOLDER)
 
@@ -359,16 +546,42 @@ class RENDER_OT_cli_launcher(bpy.types.Operator):
                     os.path.splitext(blend_file)[0], base, run_stamp))
             job_list.append({
                 "name": base,
+                # -S: the scene the button was pressed in. Without it Blender
+                # renders the scene that was active when the file was saved.
                 "cmd": jobs.render_command(bpy.app.binary_path, render_blend,
-                                           start, end, output_path),
+                                           start, end, output_path, scene.name),
                 # the frames Blender will render (-a honours the frame step)
                 "frames": list(range(start, end + 1, step)),
                 "log": log,
+                # Where the compositor's File Output nodes write. Captured HERE,
+                # from the live scene, because the queue process never opens the
+                # .blend and cannot discover them. With Save Output off these are
+                # the only files a render produces.
+                "extra_outputs": comp_prefixes,
+                # per job: a joined launch can come from another scene
+                "scene": info,
             })
 
         parallel = scene.cli_parallel_jobs if use_subscenes else 1
+
+        # --- a queue already running for this .blend takes these jobs as its
+        # own batch: same window, one GPU guard over every job of the file.
+        # Whether they start now or wait is the queue's GPU admission rule.
+        joined = jobs.offer_to_queue(blend_path, {
+            "jobs": job_list, "parallel": parallel, "cleanup": cleanup})
+        if joined is not None:
+            where = ("  Queue window: " + joined["url"]) if joined.get("url") else ""
+            self.report({'INFO'}, f"Added {len(job_list)} render job(s) to the queue "
+                                  f"already running for this file - they start as soon "
+                                  f"as GPU memory allows.{where}")
+            return {'FINISHED'}
+
+        port = _free_port() if web_ui else 0
+        queue_log = os.path.join(log_dir, "%s_queue_%s.log" % (
+            os.path.splitext(blend_file)[0], run_stamp)) if web_ui else None
         try:
-            launch_queue(job_list, parallel, cleanup, level, gpu_warn, gpu_stop)
+            launch_queue(job_list, parallel, cleanup, level, gpu_warn, gpu_stop,
+                         web_ui, web_ui_open, port, queue_log, info, blend_path)
         except OSError as exc:
             for path in cleanup:
                 os.remove(path)
@@ -376,8 +589,10 @@ class RENDER_OT_cli_launcher(bpy.types.Operator):
             return {'CANCELLED'}
 
         at_once = min(parallel, len(job_list))
+        where = (f"  Queue window: http://127.0.0.1:{port}/" if (web_ui and port)
+                 else "  Blender remains responsive.")
         self.report({'INFO'}, f"Launched {len(job_list)} render job(s), "
-                              f"{at_once} at a time. Blender remains responsive.")
+                              f"{at_once} at a time.{where}")
         return {'FINISHED'}
 
 

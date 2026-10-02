@@ -183,3 +183,51 @@ def lines(subtitle="", colour=False):
             out.append(("  " + text).rstrip() if not colour else "  " + text)
     out.append("")
     return out
+
+
+# ── VRAM gauge ────────────────────────────────────────────────────────────────
+# Drawn periodically during a render, in the logo's own three colours so the
+# console reads as one picture. The colours are a FIXED SCALE, not a status:
+# every cell is tinted by the percentage it represents, so the warn and stop
+# levels are visible as bands whether or not the bar has reached them. That
+# turns the gauge into "how close am I to the level that stops a render",
+# which is the question worth answering, rather than a decorative bar.
+
+GAUGE_FULL  = "\u2588"      # same block the logo is drawn with
+GAUGE_EMPTY = "\u2500"
+
+
+def gauge_cell_colour(cell_pct, warn=66, stop=90):
+    """Blue below the alarm, orange up to the stop level, white above it.
+
+    Each threshold switches its own band on, so 0 (that alarm turned off in
+    the preferences) simply removes that colour instead of disabling the rest.
+    A cell is judged by its MIDPOINT, so with the default 24 cells each one
+    covers about 4% and a band starts at the first cell whose middle is past
+    the threshold -- the honest reading of a bar this coarse.
+    """
+    if stop and cell_pct >= stop:
+        return ANSI["W"]
+    if warn and cell_pct >= warn:
+        return ANSI["O"]
+    return ANSI["B"]
+
+
+def vram_gauge(used_mb, total_mb, name="", warn=66, stop=90, width=24, colour=False):
+    """One line: 'VRAM [bar] 48%  15.3/31.8 GB  NVIDIA GeForce RTX 5090'."""
+    if not total_mb:
+        return None
+    pct = 100.0 * used_mb / total_mb
+    filled = int(round(width * min(max(pct, 0.0), 100.0) / 100.0))
+    cells = []
+    for i in range(width):
+        cell_pct = (i + 0.5) * 100.0 / width
+        if i < filled:
+            cells.append(("\x1b[38;5;%dm" % gauge_cell_colour(cell_pct, warn, stop) + GAUGE_FULL)
+                         if colour else GAUGE_FULL)
+        else:
+            cells.append((GREY + GAUGE_EMPTY) if colour else GAUGE_EMPTY)
+    bar = "".join(cells) + (RESET if colour else "")
+    tail = ("  " + name) if name else ""
+    return "VRAM [%s] %3d%%  %.1f/%.1f GB%s" % (
+        bar, int(round(pct)), used_mb / 1024.0, total_mb / 1024.0, tail)

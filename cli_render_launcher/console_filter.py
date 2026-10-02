@@ -22,8 +22,18 @@ tests/fixtures. No bpy - tested with plain Python (tests/test_console_filter.py)
 import re
 import time
 
+# Plain import, not relative: runner.py loads this module as a top level
+# module after putting the add-on folder on sys.path, because the whole
+# watcher runs OUTSIDE Blender where there is no package context.
+import banner  # noqa: E402
+
 LEVELS = ('CLEAN', 'DETAILED', 'FULL')
 RATE_WINDOW = 5            # frames averaged for the "at the current rate" ETA
+# How often the VRAM gauge is drawn, in rendered frames. Every frame would
+# push the progress lines apart for no new information -- VRAM moves slowly
+# once a scene is loaded -- and the GPU is only re-read every GPU_POLL_S
+# anyway, so a tighter gauge would just redraw the same number.
+GAUGE_EVERY = 10
 
 # 5.x core log line:  "00:02.453  render           | Rendering frame 1"
 _CLOG = re.compile(r"^\s*\d{2}:\d{2}\.\d{3}\s+(\S+)\s*\|\s?(.*)$")
@@ -75,12 +85,21 @@ class ConsoleFilter:
     (several jobs interleaved) skips "live" and prints "final" normally.
     """
 
-    def __init__(self, name, frames, level='CLEAN', log_path=None, clock=time.time):
+    def __init__(self, name, frames, level='CLEAN', log_path=None, clock=time.time,
+                 gauge=None, gauge_every=GAUGE_EVERY, colour=False,
+                 gpu_warn=66, gpu_stop=90):
         self.name = name
         self.frames = list(frames)
         self.level = level if level in LEVELS else 'CLEAN'
         self.log_path = log_path
         self.clock = clock
+        # `gauge` is a zero-argument callable returning the GPU watch's most
+        # recent reading, NOT a fresh nvidia-smi call: this runs on the output
+        # path, once per rendered frame, and must never block it.
+        self.gauge = gauge
+        self.gauge_every = max(1, int(gauge_every))
+        self.colour = colour
+        self.gpu_warn, self.gpu_stop = gpu_warn, gpu_stop
 
         self.phase = 'startup'          # startup -> loading -> render -> shutdown
         self.started = clock()
@@ -159,6 +178,31 @@ class ConsoleFilter:
                 parts.append("%s/frame" % fmt_duration(rate))
                 parts.append("~%s left (done ~%s)" % (fmt_duration(left), done_at))
         out.append(("print", " · ".join(parts)))
+        out.extend(self._gauge_lines())
+        return out
+
+    def _gauge_lines(self):
+        """A VRAM bar every `gauge_every` frames, one line per GPU.
+
+        FULL is exactly what Blender printed, so nothing is added there.
+        A missing reading (no nvidia-smi, or the first frame before the GPU
+        thread has sampled) simply draws nothing rather than a row of zeros.
+        """
+        if self.gauge is None or self.level == 'FULL':
+            return []
+        if self.done % self.gauge_every:
+            return []
+        try:
+            gpus = self.gauge()
+        except Exception:
+            return []
+        out = []
+        for _idx, name, used, total in (gpus or []):
+            text = banner.vram_gauge(used, total, name=name,
+                                     warn=self.gpu_warn, stop=self.gpu_stop,
+                                     colour=self.colour)
+            if text:
+                out.append(("print", "  " + text))
         return out
 
     def _frame_end(self):

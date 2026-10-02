@@ -79,6 +79,9 @@ class GpuWatch:
         self.last_alarm = {}        # gpu index -> % at the last alarm
         self.peak = {}              # gpu index -> (pct, used, total, name)
         self.available = None
+        # The most recent reading, so the per-frame gauge can draw from it
+        # instead of spawning an nvidia-smi of its own on the output path.
+        self.last = None
 
     def describe(self):
         """One header line: what is watched."""
@@ -91,11 +94,26 @@ class GpuWatch:
         names = ", ".join("%s (%.0f GB)" % (n, _gb(t)) for _i, n, _u, t in gpus)
         return "GPU memory watched: %s - alarm above %d%%" % (names, self.threshold)
 
+    def sample(self):
+        """Read once and remember it. Separate from check() because the gauge
+        wants a reading even when the alarm is switched off (threshold 0) --
+        but `available is False` still short-circuits, so a machine without
+        nvidia-smi is not probed over and over."""
+        if self.available is False:
+            return None
+        self.last = self.reader() or None
+        return self.last
+
+    def latest(self):
+        """The last reading, without touching nvidia-smi. None until the
+        first sample lands."""
+        return self.last
+
     def check(self):
         """Poll once; returns alarm / all-clear texts (usually none)."""
+        gpus = self.sample()
         if not self.threshold or self.available is False:
             return []
-        gpus = self.reader()
         if not gpus:
             return []
         out = []

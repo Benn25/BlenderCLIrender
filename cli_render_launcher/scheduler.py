@@ -19,6 +19,13 @@ Rules (GPU memory = the whole card, read through gpu_monitor):
              runs, and nothing starts beside it. One alone retry; a second
              out-of-memory is reported as a failure.
 
+Joining     A second launch from the same .blend joins the running queue
+             (see runner.Inbox) as its own BATCH, with its own parallel limit:
+             each launch gets the slots it asked for, so a joined set is not
+             stuck behind the first set's limit. Whether it starts NOW is the
+             admission rule above - the GPU decides - and from then on one
+             stop rule watches every job of that file.
+
 Launching is injected (`launch(job) -> handle`), as are the GPU reader and
 the clock, so every rule is tested with simulated renders
 (tests/test_scheduler.py). No bpy, no subprocess here.
@@ -57,10 +64,29 @@ def remaining_from(frames, frame):
 
 class Job:
     def __init__(self, spec):
+        # Position in the original queue. The viewer addresses jobs by this,
+        # so a log or an output file is always looked up against the job that
+        # actually produced it, however the running/pending lists shuffle.
+        self.uid = spec.get("uid", 0)
+        self.result = None              # (code, seconds, note) once it has ended
+        # The watcher's last status, kept when the job ends. Per-frame timings
+        # are measured in the watcher process and die with it, and they are
+        # exactly what you want to read AFTER a render, not only during it.
+        self.final_status = {}
         self.name = spec["name"]
         self.cmd = spec["cmd"]
         self.frames = list(spec.get("frames") or [])
         self.log = spec.get("log")
+        # Where the compositor's File Output nodes write, captured by the
+        # add-on from the live scene. The queue never opens the .blend, so it
+        # could not find these itself.
+        self.extra_outputs = list(spec.get("extra_outputs") or [])
+        # Which launch this job came from; each launch keeps its own
+        # parallel limit (see Scheduler.add_batch).
+        self.batch = spec.get("batch", 0)
+        # What scene this job renders (engine, resolution, view layers ...),
+        # captured in Blender: joined launches can come from another scene.
+        self.scene = spec.get("scene")
         self.alone = False
         self.oom_retries = 0
         self.stops = 0
@@ -77,9 +103,16 @@ class Job:
 
 class Scheduler:
     def __init__(self, spec, launch, gpu_reader=None, say=print,
-                 clock=time.time, sleep=time.sleep):
+                 clock=time.time, sleep=time.sleep, intake=None):
         self.pending = [Job(j) for j in spec["jobs"]]
-        self.parallel = max(1, int(spec.get("parallel", 1)))
+        for job in self.pending:
+            job.batch = 0
+        # {batch: parallel limit}. Batch 0 is the launch that started the queue.
+        self.batch_parallel = {0: max(1, int(spec.get("parallel", 1)))}
+        self.parallel = self.batch_parallel[0]      # total, for display
+        # intake.take() -> [(job_specs, parallel)] handed over by later launches;
+        # intake.close() stops accepting and returns anything that slipped in.
+        self.intake = intake
         self.admit_pct = spec.get("gpu_warn", 66) or 66
         self.stop_pct = spec.get("gpu_stop", 90)
         self.launch = launch
@@ -89,6 +122,10 @@ class Scheduler:
         self.sleep = sleep
         self.running = []           # [(job, handle, started_at)]
         self.results = []           # (name, code, seconds, note)
+        # The Job objects themselves, kept after they end: a finished render is
+        # exactly when its output files are most worth listing, and `results`
+        # holds only names.
+        self.finished = []
         self.last_start = -1e9
         self.last_stop = -1e9
         self.last_gpu_read = -1e9
@@ -109,14 +146,55 @@ class Scheduler:
             self.gpu_pct = max(100.0 * u / t for _i, _n, u, t in gpus if t > 0)
         return self.gpu_pct
 
+    # -- batches -----------------------------------------------------------
+
+    def add_batch(self, job_specs, parallel):
+        """Append the jobs of a later launch. Returns the new Job objects."""
+        batch = max(self.batch_parallel) + 1
+        self.batch_parallel[batch] = max(1, int(parallel or 1))
+        self.parallel = sum(self.batch_parallel.values())
+        added = []
+        for spec in job_specs:
+            job = Job(spec)
+            job.batch = batch
+            added.append(job)
+        self.pending.extend(added)
+        self.say("joined    %d job(s) from another launch of this file, "
+                 "up to %d at a time" % (len(added), self.batch_parallel[batch]))
+        return added
+
+    def _take_in(self, closing=False):
+        if self.intake is None:
+            return
+        try:
+            batches = self.intake.close() if closing else self.intake.take()
+        except Exception as exc:              # a bad hand-over must not stop renders
+            self.say("could not read a joined launch: %s" % exc)
+            return
+        for job_specs, parallel in batches or []:
+            if job_specs:
+                self.add_batch(job_specs, parallel)
+
+    def _next_candidate(self):
+        """The first pending job whose launch still has a free slot."""
+        busy = {}
+        for job, _h, _t in self.running:
+            busy[job.batch] = busy.get(job.batch, 0) + 1
+        for job in self.pending:
+            if busy.get(job.batch, 0) < self.batch_parallel.get(job.batch, 1):
+                return job
+        return None
+
     # -- decisions ---------------------------------------------------------
 
     def _can_admit(self, pct):
-        if not self.pending or len(self.running) >= self.parallel:
+        if not self.pending:
             return False
         if any(job.alone for job, _h, _t in self.running):
             return False                       # an "alone" retry runs by itself
-        nxt = self.pending[0]
+        nxt = self._next_candidate()
+        if nxt is None:
+            return False                       # every launch is at its limit
         if nxt.alone:
             return not self.running
         if not self.running:
@@ -136,10 +214,13 @@ class Scheduler:
         return True
 
     def _start_next(self):
-        job = self.pending.pop(0)
+        job = self._next_candidate()
+        self.pending.remove(job)
         try:
             handle = self.launch(job.as_launch())
         except OSError as exc:
+            job.result = (None, 0.0, "could not start: %s" % exc)
+            self.finished.append(job)
             self.results.append((job.name, None, 0.0, "could not start: %s" % exc))
             self.say("FAILED to start %s: %s" % (job.name, exc))
             return
@@ -177,6 +258,7 @@ class Scheduler:
     def _finished(self, job, handle, started, code):
         took = self.clock() - started
         st = handle.status()
+        job.final_status = st or {}
         resume = st.get("resume")
         if resume is not None:
             left = remaining_from(job.frames, resume)
@@ -200,11 +282,16 @@ class Scheduler:
                 self.say("!! %s ran out of GPU memory at frame %d - retrying alone "
                          "once the others are done" % (job.name, left[0]))
                 return
+            job.result = (code, took,
+                          "out of GPU memory at frame %d, even alone" % left[0])
+            self.finished.append(job)
             self.results.append((job.name, code, took,
                                  "out of GPU memory at frame %d, even alone" % left[0]))
             self.say("FAILED    %s: out of GPU memory at frame %d even alone - the scene "
                      "needs more GPU memory than the card has" % (job.name, left[0]))
             return
+        job.result = (code, took, None)
+        self.finished.append(job)
         self.results.append((job.name, code, took, None))
         self.say("finished  %s  (%s)" % (job.name, "OK" if code == 0 else "exit code %d" % code))
 
@@ -212,7 +299,15 @@ class Scheduler:
 
     def run(self):
         self.say("CLI Render queue: %d job(s), up to %d at a time" % (len(self.pending), self.parallel))
-        while self.pending or self.running:
+        while True:
+            self._take_in()
+            if not (self.pending or self.running):
+                # Stop accepting FIRST, then take whatever arrived in between:
+                # a launch that dropped its jobs just before the close is run,
+                # never lost (runner.Inbox claims each file by renaming it).
+                self._take_in(closing=True)
+                if not self.pending:
+                    break
             pct = self._read_gpu()
             while self._can_admit(pct):
                 self._start_next()
