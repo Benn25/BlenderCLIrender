@@ -25,9 +25,10 @@ Get the ready-to-install zip on [Gumroad](https://blenderbenn.gumroad.com/l/rend
   with frames to go, speed and time left; problems shown once; the noise from other add-ons hidden.
   The full raw log is kept in `cli_render_logs/` next to the `.blend`. A render that fails keeps its console open.
   A VRAM gauge shows how close the card is to the alarm and stop levels.
-- **GPU memory protection** (NVIDIA, via `nvidia-smi`) — alarm above 66%, new SubScenes start only when there is room,
-  above 90% one render pauses and later resumes at the same frame, and a render that runs out of GPU memory is
-  killed before it can save a broken frame and retried alone from that frame.
+- **GPU memory protection** (NVIDIA, via `nvidia-smi`) — alarm above 66%, new SubScenes start only when there is room
+  (judged on the last minute's peak, so the dips between frames don't count), above 90% one render pauses and later
+  resumes at the same frame, and the queue then runs one render fewer at a time. A render that runs out of GPU memory
+  is killed before it can save a broken frame and retried alone from that frame.
 - **Safety checks** before launching — file saved once, no backwards ranges (single frames are fine),
   output folder exists, SubScene folders can be created, and something will actually be written.
 - **Clean file names** — `shot_0001-0100_0001.png`; videos are named by Blender only once.
