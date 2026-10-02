@@ -436,6 +436,8 @@ def state(sch, spec, gpu_cache=None, gpu_history=None, clock=None, started_at=No
                                       if j["state"] in ("done", "failed")),
                       "failed": sum(1 for j in jobs if j["state"] == "failed"),
                       "parallel": getattr(sch, "parallel", 1),
+                      # lowered for the rest of the queue after a GPU memory stop
+                      "mem_cap": getattr(sch, "mem_cap", None),
                       "frames_done": frames_done, "frames_total": frames_total,
                       # `is not None`, not a truth test: a started_at of 0.0 is
                       # a real time, and only a test ever passes one - which is
@@ -984,7 +986,9 @@ function paintHead(s){
   setText(document.getElementById('sum'),
     q.running + ' rendering · ' + q.pending + ' waiting · ' + q.finished + ' finished'
     + (q.failed ? ' (' + q.failed + ' failed)' : '')
-    + '   (up to ' + q.parallel + ' at a time)');
+    + (q.mem_cap != null && q.mem_cap < q.parallel
+       ? '   (up to ' + q.mem_cap + ' at a time: GPU memory full at ' + (q.mem_cap + 1) + ')'
+       : '   (up to ' + q.parallel + ' at a time)'));
   const want = [];
   if (q.frames_total) want.push(['frames', q.frames_done + ' / ' + q.frames_total]);
   if (q.elapsed_s != null) want.push(['elapsed', dur(q.elapsed_s)]);
