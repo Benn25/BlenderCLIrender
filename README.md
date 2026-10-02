@@ -1,10 +1,14 @@
 # BlenderCLIrender
 
+![CLI Render](docs/images/banner.png)
+
 **Render your animation from the command line, in the background, while you keep working in Blender.**
 
 A Blender add-on (extension, Blender 4.2+ including 5.x) that launches separate background renders
 from a panel in **Properties › Render**, with your frame ranges, file names and output folder.
 Get the ready-to-install zip on [Gumroad](https://blenderbenn.gumroad.com/l/renderfromCL) (free, name a price if you like).
+
+<img src="docs/images/panel.png" alt="The CLI Render panel in Properties > Render" width="552">
 
 ## Features
 
@@ -32,6 +36,17 @@ Get the ready-to-install zip on [Gumroad](https://blenderbenn.gumroad.com/l/rend
 - **Safety checks** before launching — file saved once, no backwards ranges (single frames are fine),
   output folder exists, SubScene folders can be created, and something will actually be written.
 - **Clean file names** — `shot_0001-0100_0001.png`; videos are named by Blender only once.
+
+## The queue window
+
+Every job, its progress and time left, the GPU memory, the render log and the frames written so far
+(main output and each compositor File Output node):
+
+![Queue window while rendering](docs/images/queue_window.jpg)
+
+When the queue ends - here one job was paused once to free GPU memory and resumed at the same frame:
+
+![Queue window, all jobs done](docs/images/queue_done.jpg)
 
 ## Install
 
