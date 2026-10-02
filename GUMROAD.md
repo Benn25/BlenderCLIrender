@@ -26,12 +26,13 @@ Last updated: 2026-10-02 (listing prepared for 5.12.3, not saved yet: the owner 
 | Description | `cli_render_panel.png` | Full panel, demo SubScenes intro/closeup/orbit/outro. |
 | Description | `cli_render_subscenes.png` | Close-up of the SubScenes list. |
 | Description | `cli_render_output_off.png` | Output section with Save Output off. |
+| Description | `queue_details_3outputs.jpg` | Queue window, "second part" open: mp4 + single-layer EXR list + jpg thumbnails, 2 view layers. Spares: `queue_overview_during.jpg`, `queue_job_details_during.jpg`, `queue_all_done.jpg`. |
 | Description | `console_banner_preview.png` | The render console banner (logo + CLI RENDER + by Benjamin Davoult). |
 
 All images live locally in `D:\blender\addon making\CLI render\screenshots\` (backups of the
 old V6 cover/thumbnail there too). **Known gap:** the cover, thumbnail and panel screenshots
-still show the header **v5.3.0** — they should be retaken with 5.12.3 installed. The new
-"queue window" section has a `[[IMG:queue_window]]` placeholder waiting for a screenshot.
+still show the header **v5.3.0** — they should be retaken with 5.12.3 installed. The queue-window
+screenshots (2026-10-02, 5.12.3, crystals3.blend) are new and current.
 
 ## Description — structure and claims
 
@@ -47,12 +48,13 @@ still show the header **v5.3.0** — they should be retaken with 5.12.3 installe
 4. **What's in the panel** (Properties › Render, red CLI RENDER panel):
    Name & frame range · SubScenes: batch your shots (+ image) · Output & file names ·
    Compositor-only renders (+ image) · Render the current state · Safety checks.
-4b. **The queue window** (5.12) — `[[IMG:queue_window]]` placeholder + bullets (jobs, progress,
+4b. **The queue window** (5.12) — image `queue_details_3outputs.jpg` + bullets (jobs, progress,
    ETA, log, rendered frames; 127.0.0.1 only, read-only; on by default, switch in preferences).
 5. **The render console** — banner image, an example console block (code block), bullets
    (progress, problems only, nothing lost, Clean/Detailed/Full in preferences).
    **GPU memory protection** subsection (alarm 66%, admission, pause at 90% + resume same frame,
-   out-of-memory killed before a broken frame and retried alone). Thresholds in preferences.
+   out-of-memory killed before a broken frame and retried alone). 5.12.2 wording: admission
+   "judged on the last minute's peak", and after a pause "runs one render fewer at a time". Thresholds in preferences.
 6. **Good to know** — Blender 4.2+ incl. 5.x, install by drag & drop; queue is its own process;
    images and videos; consoles per OS (developed/tested on Windows); GPU memory for several
    SubScenes; renders the scene you launched from; GPU features need `nvidia-smi` (NVIDIA), AMD/Intel say they cannot watch; free.
