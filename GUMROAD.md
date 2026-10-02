@@ -3,7 +3,9 @@
 Record of the Gumroad product page for this add-on, so future sessions can update it
 without re-discovering everything. **Update this file whenever the listing changes.**
 
-Last updated: 2026-10-02 (listing prepared for 5.12.3, not saved yet: the owner reviews and saves).
+Last updated: 2026-10-03 (saved by the owner with 5.12.x text and the 5.13.0 zip).
+**Not yet on the page:** the 5.13 SubScene overrides (samples, every N frames, camera) -
+the description still says "Version 5.12".
 
 ## Product
 
@@ -14,7 +16,7 @@ Last updated: 2026-10-02 (listing prepared for 5.12.3, not saved yet: the owner 
 | Name | render from command line (Blender addon) |
 | Summary | A Blender extension (.zip): drag it into Blender to install. |
 | Price | **Free** — pay what you want, $0 minimum, $5 suggested (was a joke $69.69 until 2026-10-02). *Keep it free* (owner's decision). |
-| Content (download) | `cli_render_launcher-5.12.3.zip` only (older zips and the old `.py` removed) |
+| Content (download) | `cli_render_launcher-5.13.0.zip` only (uploaded by the owner) (older zips and the old `.py` removed) |
 | Size (additional details) | filled in automatically by Gumroad from the files |
 
 ## Images
