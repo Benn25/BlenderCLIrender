@@ -11,6 +11,12 @@ Get the ready-to-install zip on [Gumroad](https://blenderbenn.gumroad.com/l/rend
 - **SubScenes** — save frame ranges as named presets, tick the ones you want and render them in one click,
   one by one or several at once (you choose how many). Optional subfolder per SubScene. The list order is the render order.
 - **The queue runs on its own** — close Blender, the renders keep going.
+- **Queue window in your browser** — a read-only page (127.0.0.1 only) showing every job, its progress,
+  its log and the frames it has rendered (main output and compositor File Output nodes). On by default;
+  the queue's own console is then hidden and its output goes to a log.
+- **One queue per .blend** — launching again from the same file joins the running queue as its own batch,
+  with its own "SubScenes at once"; the GPU rules then watch every job of that file.
+- **Renders the scene you launched from** (`-S <scene>`), even in a file with several scenes.
 - **Render the current state** — a temporary snapshot of the scene is rendered, so unsaved changes are
   included and edits made while the queue runs never leak into it. Deleted when the queue ends.
 - **Compositor-only renders** — with Blender's *Save Output* off, only the compositor's File Output nodes write
@@ -18,6 +24,7 @@ Get the ready-to-install zip on [Gumroad](https://blenderbenn.gumroad.com/l/rend
 - **A clean render console** — each render opens its own console (with a Blender logo banner): one line per frame
   with frames to go, speed and time left; problems shown once; the noise from other add-ons hidden.
   The full raw log is kept in `cli_render_logs/` next to the `.blend`. A render that fails keeps its console open.
+  A VRAM gauge shows how close the card is to the alarm and stop levels.
 - **GPU memory protection** (NVIDIA, via `nvidia-smi`) — alarm above 66%, new SubScenes start only when there is room,
   above 90% one render pauses and later resumes at the same frame, and a render that runs out of GPU memory is
   killed before it can save a broken frame and retried alone from that frame.
@@ -30,7 +37,7 @@ Get the ready-to-install zip on [Gumroad](https://blenderbenn.gumroad.com/l/rend
 Drag `cli_render_launcher-<version>.zip` into Blender, or *Edit › Preferences › Get Extensions › Install from Disk*.
 To build the zip from this repository, zip the **contents** of `cli_render_launcher/` (the manifest must be at the zip root).
 
-Console level (Clean / Detailed / Full), log files and the GPU thresholds are in the add-on's preferences.
+Console level (Clean / Detailed / Full), log files, the queue window and the GPU thresholds are in the add-on's preferences.
 
 ## Repository layout
 
@@ -45,7 +52,8 @@ cli_render_launcher/   the add-on (Blender extension package)
   scheduler.py         GPU-aware decisions: start / stop / retry (pure Python)
   console_filter.py    turns Blender's raw output into the clean console (pure Python)
   gpu_monitor.py       GPU memory through nvidia-smi (pure Python)
-  banner.py            the Blender logo shown in each render console
+  banner.py            the Blender logo and VRAM gauge shown in each render console
+  webui.py             the read-only queue window served on 127.0.0.1 (pure Python)
 tests/                 plain-Python tests + end-to-end scripts (see each file's docstring)
 GUMROAD.md             what is published on the Gumroad product page
 ```
