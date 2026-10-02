@@ -203,6 +203,7 @@ def job_prefixes(job_cmd, extra):
 
 
 _TRAILING_DIGITS = re.compile(r"(\d+)$")
+_LEADING_DIGITS = re.compile(r"(\d+)")
 
 
 def frame_of(name, stem=""):
@@ -217,6 +218,11 @@ def frame_of(name, stem=""):
     if stem and base.startswith(stem):
         base = base[len(stem):]
     m = _TRAILING_DIGITS.search(base)
+    if m:
+        return int(m.group(1))
+    # A '#' typed mid-name puts the frame there instead (`####beauty` ->
+    # `0905beauty.exr`): then it is the first run of digits after the stem.
+    m = _LEADING_DIGITS.match(base)
     return int(m.group(1)) if m else None
 
 

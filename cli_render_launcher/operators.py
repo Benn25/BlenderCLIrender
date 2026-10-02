@@ -107,10 +107,19 @@ def _slot_prefixes(node):
     directory = bpy.path.abspath(getattr(node, "directory", "") or "")
     if not directory:
         return []
-    items = list(getattr(node, "file_output_items", None) or [])
-    names = [getattr(it, "name", "") for it in items] if items else []
+    # Blender 5 names each file <node file_name><item name>, the frame going
+    # at the '#'s or at the end: file_name '####' + item 'beauty' writes
+    # `0905beauty.exr` (seen on 5.2.2). Before 5.12.2 only the item name was
+    # used, so that node listed nothing. A multilayer EXR is ONE file per
+    # frame holding every item as a layer: named by file_name alone.
+    file_name = getattr(node, "file_name", "") or ""
+    fmt = getattr(node, "format", None)
+    multilayer = (getattr(fmt, "media_type", "") == "MULTI_LAYER_IMAGE"
+                  or getattr(fmt, "file_format", "") == "OPEN_EXR_MULTILAYER")
+    items = [] if multilayer else list(getattr(node, "file_output_items", None) or [])
+    names = [file_name + (getattr(it, "name", "") or "") for it in items]
     if not names:
-        names = [getattr(node, "file_name", "") or ""]
+        names = [file_name]
     out = []
     node_label = (getattr(node, "label", "") or getattr(node, "name", "")
                   or "File Output")
