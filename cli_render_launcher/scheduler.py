@@ -46,6 +46,7 @@ import time
 
 STOP_CODE = 75          # the job's console stopped Blender on request
 OOM_CODE = 76           # the job's console killed Blender: out of GPU memory
+OVERRIDE_CODE = 77      # a SubScene override failed (= jobs.OVERRIDE_FAILED_CODE)
 
 TICK_S = 0.5
 GPU_POLL_S = 2.0
@@ -56,9 +57,16 @@ OOM_ALONE_RETRIES = 1
 
 
 def with_start(cmd, frame):
-    """The same render command, starting at `frame` (replaces -s)."""
+    """The same render command, starting at `frame` (replaces -s).
+
+    The -s that is followed by `<n> -e`: a scene called "-s" (passed as -S -s)
+    must not be mistaken for it.
+    """
     cmd = list(cmd)
-    i = cmd.index("-s")
+    i = next((k for k in range(len(cmd) - 2)
+              if cmd[k] == "-s" and cmd[k + 2] == "-e"), None)
+    if i is None:
+        i = cmd.index("-s")
     cmd[i + 1] = str(frame)
     return cmd
 
@@ -95,6 +103,9 @@ class Job:
         # What scene this job renders (engine, resolution, view layers ...),
         # captured in Blender: joined launches can come from another scene.
         self.scene = spec.get("scene")
+        # This SubScene's overrides in words ("16 samples · every 4th frame"),
+        # already applied in its command line; shown, never re-applied.
+        self.overrides = spec.get("overrides") or ""
         self.alone = False
         self.oom_retries = 0
         self.stops = 0
@@ -106,7 +117,8 @@ class Job:
         if self.resumed and self.frames:
             cmd = with_start(cmd, self.frames[0])
         return {"name": self.name, "cmd": cmd, "frames": self.frames,
-                "log": self.log, "log_append": self.resumed, "note": self.note}
+                "log": self.log, "log_append": self.resumed, "note": self.note,
+                "overrides": self.overrides}
 
 
 class Scheduler:
@@ -319,10 +331,12 @@ class Scheduler:
             self.say("FAILED    %s: out of GPU memory at frame %d even alone - the scene "
                      "needs more GPU memory than the card has" % (job.name, left[0]))
             return
-        job.result = (code, took, None)
+        note = ("its overrides could not be applied - see its console"
+                if code == OVERRIDE_CODE else None)
+        job.result = (code, took, note)
         self.finished.append(job)
-        self.results.append((job.name, code, took, None))
-        self.say("finished  %s  (%s)" % (job.name, "OK" if code == 0 else "exit code %d" % code))
+        self.results.append((job.name, code, took, note))
+        self.say("finished  %s  (%s)" % (job.name, "OK" if code == 0 else note or "exit code %d" % code))
 
     # -- main loop ---------------------------------------------------------
 

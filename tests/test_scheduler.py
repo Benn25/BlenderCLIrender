@@ -161,6 +161,9 @@ F = lambda a, b: list(range(a, b + 1))  # noqa: E731
 print("Helpers")
 check("with_start replaces -s", S.with_start(["B", "-s", "1", "-e", "9", "-a"], 5),
       ["B", "-s", "5", "-e", "9", "-a"])
+check("with_start leaves a scene called '-s' alone",
+      S.with_start(["B", "-b", "f", "-S", "-s", "-s", "1", "-e", "9", "-a"], 5),
+      ["B", "-b", "f", "-S", "-s", "-s", "5", "-e", "9", "-a"])
 check("remaining frames with a step", S.remaining_from([1, 3, 5, 7], 5), [5, 7])
 
 print("\nAdmission: small renders, room for 3")

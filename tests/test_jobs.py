@@ -57,6 +57,95 @@ check("with output", jobs.render_command("B", "f.blend", 1, 3, "o/x_"),
 check("Save Output off: no -o at all", jobs.render_command("B", "f.blend", 1, 3, None),
       ["B", "-b", "f.blend", "-s", "1", "-e", "3", "-a"])
 
+print("\nSubScene overrides: command line")
+check("no overrides: command unchanged",
+      jobs.render_command("B", "f.blend", 1, 9, "o/x_", "Sc"),
+      ["B", "-b", "f.blend", "-S", "Sc", "-s", "1", "-e", "9", "-o", "o/x_", "-a"])
+check("every 4th frame: -j before -a, step 1 adds nothing",
+      (jobs.render_command("B", "f.blend", 1, 9, None, "Sc", frame_step=4)[-3:],
+       "-j" in jobs.render_command("B", "f.blend", 1, 9, None, "Sc", frame_step=1)),
+      (["-j", "4", "-a"], False))
+cmd = jobs.render_command("B", "f.blend", 1, 9, None, "Sc", python_expr="X")
+check("python after -S, before the range, failing = exit 77",
+      cmd[3:9], ["-S", "Sc", "--python-exit-code", "77", "--python-expr", "X"])
+check("no override: no python at all", jobs.override_expr("Sc", "cycles.samples", 0, None), None)
+check("samples without a samples setting (Workbench): nothing",
+      jobs.override_expr("Sc", None, 16, None), None)
+for value in (jobs.override_expr("Scène", "cycles.samples", 16, "Caméra"),):
+    check("one line, plain ASCII", ("\n" in value, value.isascii()), (False, True))
+
+print("\nSubScene overrides: the Python actually run (fake bpy)")
+
+
+class Obj:
+    def __init__(self, name):
+        self.name = name
+
+
+class Marker:
+    def __init__(self, cam):
+        self.camera = cam
+
+
+class NS:
+    pass
+
+
+def fake_scene(name):
+    sc = NS()
+    sc.name = name
+    sc.cycles = NS()
+    sc.cycles.samples = 512
+    sc.eevee = NS()
+    sc.eevee.taa_render_samples = 64
+    sc.objects = {"Main": Obj("Main"), "Caméra": Obj("Caméra")}
+    sc.camera = sc.objects["Main"]
+    sc.timeline_markers = [Marker(sc.objects["Main"]), Marker(None), Marker(sc.objects["Main"])]
+    return sc
+
+
+def run_expr(expr, scene):
+    bpy = NS()
+    bpy.data = NS()
+    bpy.data.scenes = {scene.name: scene}
+    sys.modules["bpy"] = bpy
+    try:
+        exec(expr, {})
+    finally:
+        del sys.modules["bpy"]
+
+
+sc = fake_scene("Scène")
+run_expr(jobs.override_expr("Scène", "cycles.samples", 16, "Caméra"), sc)
+check("cycles samples set", sc.cycles.samples, 16)
+check("forced camera set", sc.camera.name, "Caméra")
+check("camera markers can no longer switch it",
+      [m.camera for m in sc.timeline_markers], [None, None, None])
+sc = fake_scene("S")
+run_expr(jobs.override_expr("S", "eevee.taa_render_samples", 8, None), sc)
+check("EEVEE samples set, camera and markers left alone",
+      (sc.eevee.taa_render_samples, sc.camera.name, sc.timeline_markers[0].camera.name),
+      (8, "Main", "Main"))
+
+print("\nSubScene overrides: resuming after a GPU stop")
+import scheduler  # noqa: E402
+cmd = jobs.render_command("B", "f.blend", 1, 9, None, "-s", frame_step=4,
+                          python_expr=jobs.override_expr("-s", "cycles.samples", 16, None))
+resumed = scheduler.with_start(cmd, 5)
+check("resume moves only the start (even in a scene called '-s')",
+      [(a, b) for a, b in zip(cmd, resumed) if a != b], [("1", "5")])
+check("resume keeps -j and the overrides", resumed[-7:], ["-s", "5", "-e", "9", "-j", "4", "-a"])
+check("same exit code on both sides", scheduler.OVERRIDE_CODE, jobs.OVERRIDE_FAILED_CODE)
+job = scheduler.Job({"name": "a", "cmd": cmd, "frames": [1, 5, 9], "overrides": "every 4th frame"})
+check("the console gets the overrides in words", job.as_launch()["overrides"], "every 4th frame")
+
+print("\nSubScene overrides: in words")
+check("all three", jobs.override_summary(16, 4, "CloseUp"),
+      "16 samples · every 4th frame · camera CloseUp")
+check("none", jobs.override_summary(0, 1, None), "")
+check("ordinals", [jobs.ordinal(n) for n in (2, 3, 11, 12, 21, 22)],
+      ["2nd", "3rd", "11th", "12th", "21st", "22nd"])
+
 print("\nSnapshot")
 snap = jobs.snapshot_path(os.path.join("D:", "proj", "shot.blend"), "20260928-1405")
 check("snapshot sits next to the .blend", os.path.dirname(snap), os.path.join("D:", "proj"))

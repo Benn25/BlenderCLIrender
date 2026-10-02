@@ -13,6 +13,12 @@ def get_timestamp_string(mode):
     return ""
 
 
+def _scene_camera_poll(entry, obj):
+    # entry.id_data is the Scene that owns the SubScene list: only its own
+    # cameras can be picked, the ones a render of that scene can look through.
+    return obj.type == 'CAMERA' and entry.id_data.objects.get(obj.name) == obj
+
+
 class FrameRangeEntry(bpy.types.PropertyGroup):
     # The list order IS the render order (the arrows move entries in the
     # collection), so no separate "order" field is kept in sync any more.
@@ -20,6 +26,29 @@ class FrameRangeEntry(bpy.types.PropertyGroup):
     start: bpy.props.IntProperty()
     end: bpy.props.IntProperty()
     selected: bpy.props.BoolProperty(name="Render", default=False)
+
+    # --- overrides: applied inside this SubScene's render only, never to
+    # the .blend (see jobs.override_expr)
+    samples: bpy.props.IntProperty(
+        name="Samples",
+        description=("Render samples for this SubScene only. "
+                     "0 = the scene's own samples"),
+        default=0, min=0, soft_max=4096)
+    frame_step: bpy.props.IntProperty(
+        name="Every N Frames",
+        description=("Render one frame in N, for quick previews. Files keep "
+                     "their real frame numbers. 1 = every frame"),
+        default=1, min=1, soft_max=100)
+    camera: bpy.props.PointerProperty(
+        type=bpy.types.Object,
+        name="Camera",
+        description=("Render this SubScene through this camera, even if camera "
+                     "markers on the timeline would switch to another one. "
+                     "Empty = the scene's camera and markers as usual"),
+        poll=_scene_camera_poll)
+
+    def has_overrides(self):
+        return bool(self.samples or self.frame_step > 1 or self.camera)
 
 
 CLASSES = (

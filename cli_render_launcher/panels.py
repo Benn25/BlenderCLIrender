@@ -2,7 +2,8 @@ import os
 
 import bpy
 
-from .operators import scene_is_video, scene_saves_output
+from . import jobs
+from .operators import sample_setting, scene_is_video, scene_saves_output
 
 try:
     import tomllib
@@ -26,12 +27,28 @@ def _read_version():
 ADDON_VERSION = _read_version()
 
 
+def override_icon(entry):
+    """The icon that says which override a SubScene has, or BLANK1 for none.
+
+    One override shows its own icon; several at once show the monkey, and the
+    Overrides box under the list says which.
+    """
+    active = [icon for icon, on in (('VIEW_CAMERA', entry.camera is not None),
+                                    ('NODE_TEXTURE', entry.samples > 0),
+                                    ('RENDER_RESULT', entry.frame_step > 1)) if on]
+    if not active:
+        return 'BLANK1'
+    return active[0] if len(active) == 1 else 'MONKEY'
+
+
 class FRAMERANGE_UL_List(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
         use_subscenes = getattr(context.scene, "use_presets", True)
         row = layout.row(align=True)
         row.enabled = use_subscenes
-        row.label(text="", icon='BLANK1')
+        # The spare slot at the row's start shows a SubScene's overrides, so
+        # the list gets no extra column (the Overrides box spells them out).
+        row.label(text="", icon=override_icon(item))
         row.prop(item, "selected", text="")
         start = row.row(align=True)
         start.scale_x = 0.8
@@ -105,6 +122,7 @@ class RENDER_PT_cli_launcher(bpy.types.Panel):
         col.operator("framerange.delete_entry", icon='REMOVE', text="")
         col.operator("framerange.apply_entry", icon='EXPORT', text="")
         col.operator("framerange.update_entry", icon='IMPORT', text="")
+        self.draw_overrides(layout, scene)
 
         # --- Output. "Save Output" is the scene's own setting (Blender 5.1+),
         # shown here so it is visible where it matters; the add-on only reads it.
@@ -128,6 +146,38 @@ class RENDER_PT_cli_launcher(bpy.types.Panel):
         layout.prop(scene, "cli_use_snapshot",
                     text="Render current state (temporary snapshot)")
         layout.operator("render.cli_launcher", icon='CONSOLE')
+
+    @staticmethod
+    def draw_overrides(layout, scene):
+        """The selected SubScene's overrides, folded by default.
+
+        A layout.panel (Blender 4.1+) rather than more list columns: the list
+        stays as narrow as before, and the folded header still says what is
+        overridden.
+        """
+        entries = scene.framerange_entries
+        if not (0 <= scene.framerange_index < len(entries)):
+            return
+        entry = entries[scene.framerange_index]
+        header, body = layout.panel("CLI_subscene_overrides", default_closed=True)
+        header.enabled = scene.use_presets
+        summary = jobs.override_summary(entry.samples, entry.frame_step,
+                                        entry.camera.name if entry.camera else None)
+        icon = override_icon(entry)
+        header.label(text="Overrides · %s%s" % (entry.name, ("  ·  " + summary) if summary else ""),
+                     icon='NONE' if icon == 'BLANK1' else icon)
+        if body is None:
+            return
+        body.enabled = scene.use_presets
+        col = body.column()
+        col.prop(entry, "samples", text="Samples (0 = scene)")
+        if entry.samples and sample_setting(scene) is None:
+            col.label(text="%s has no samples setting: ignored"
+                      % scene.render.engine.title(), icon='INFO')
+        col.prop(entry, "frame_step", text="Every N Frames")
+        col.prop(entry, "camera", text="Camera")
+        if entry.camera and any(m.camera for m in scene.timeline_markers):
+            col.label(text="Camera markers are ignored for this SubScene", icon='INFO')
 
 
 CLASSES = (
