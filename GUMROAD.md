@@ -3,7 +3,7 @@
 Record of the Gumroad product page for this add-on, so future sessions can update it
 without re-discovering everything. **Update this file whenever the listing changes.**
 
-Last updated: 2026-09-29 (listing prepared for 5.5.0).
+Last updated: 2026-10-02 (listing prepared for 5.12.2, not saved yet: the owner reviews and saves).
 
 ## Product
 
@@ -14,7 +14,7 @@ Last updated: 2026-09-29 (listing prepared for 5.5.0).
 | Name | render from command line (Blender addon) |
 | Summary | A Blender extension (.zip): drag it into Blender to install. |
 | Price | **Free** — pay what you want, $0 minimum, $1.69 suggested. *Keep it free* (owner's decision). |
-| Content (download) | `cli_render_launcher-5.5.0.zip` only (older zips and the old `.py` removed) |
+| Content (download) | `cli_render_launcher-5.12.2.zip` only (older zips and the old `.py` removed) |
 | Size (additional details) | filled in automatically by Gumroad from the files |
 
 ## Images
@@ -30,29 +30,32 @@ Last updated: 2026-09-29 (listing prepared for 5.5.0).
 
 All images live locally in `D:\blender\addon making\CLI render\screenshots\` (backups of the
 old V6 cover/thumbnail there too). **Known gap:** the cover, thumbnail and panel screenshots
-still show the header **v5.3.0** — the panel did not change since, but they should be retaken
-with 5.5.0 installed.
+still show the header **v5.3.0** — they should be retaken with 5.12.2 installed. The new
+"queue window" section has a `[[IMG:queue_window]]` placeholder waiting for a screenshot.
 
 ## Description — structure and claims
 
 1. Intro (bold): render from the command line in the background while you keep working.
    Second line: separate renders in their own consoles; you can close Blender, the queue keeps going.
 2. Image: full panel.
-3. **🚀 Version 5.5 — big update** — "grown a lot since this page was first written", free update
-   in the Gumroad library. List: clean render console · GPU memory protection · out-of-memory
+3. **🚀 Version 5.12 — big update** — "grown a lot since this page was first written", free update
+   in the Gumroad library. List (5.12 items first): queue window · one queue per .blend ·
+   renders the scene you launched from · VRAM gauge · clean render console · GPU memory protection · out-of-memory
    recovery · failed render keeps its console open · SubScenes at once · queue runs on its own ·
    render the current state · compositor-only renders · a subfolder per SubScene · cleaner file
    names · safety checks · proper Blender extension · macOS & Linux fixes.
 4. **What's in the panel** (Properties › Render, red CLI RENDER panel):
    Name & frame range · SubScenes: batch your shots (+ image) · Output & file names ·
    Compositor-only renders (+ image) · Render the current state · Safety checks.
+4b. **The queue window** (5.12) — `[[IMG:queue_window]]` placeholder + bullets (jobs, progress,
+   ETA, log, rendered frames; 127.0.0.1 only, read-only; on by default, switch in preferences).
 5. **The render console** — banner image, an example console block (code block), bullets
    (progress, problems only, nothing lost, Clean/Detailed/Full in preferences).
    **GPU memory protection** subsection (alarm 66%, admission, pause at 90% + resume same frame,
    out-of-memory killed before a broken frame and retried alone). Thresholds in preferences.
 6. **Good to know** — Blender 4.2+ incl. 5.x, install by drag & drop; queue is its own process;
    images and videos; consoles per OS (developed/tested on Windows); GPU memory for several
-   SubScenes; GPU features need `nvidia-smi` (NVIDIA), AMD/Intel say they cannot watch; free.
+   SubScenes; renders the scene you launched from; GPU features need `nvidia-smi` (NVIDIA), AMD/Intel say they cannot watch; free.
 
 **Rule:** every claim must match the code. Removed in 5.3 because they were false on Blender 5.2:
 "compositor activated automatically" and the File Output missing-folder warning.
