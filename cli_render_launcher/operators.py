@@ -174,6 +174,22 @@ def compositor_output_prefixes(scene):
     return result
 
 
+def sample_setting(scene):
+    """The engine's render-samples setting, as a path from the scene, or None.
+
+    None for Workbench and third-party engines: they have no samples count a
+    SubScene could override, and guessing a property name would only fail
+    the render.
+    """
+    engine = scene.render.engine
+    if engine == 'CYCLES' and hasattr(scene, "cycles"):
+        return "cycles.samples"
+    # BLENDER_EEVEE_NEXT on 4.2-4.x, BLENDER_EEVEE again from 5.0
+    if engine.startswith("BLENDER_EEVEE") and hasattr(scene, "eevee"):
+        return "eevee.taa_render_samples"
+    return None
+
+
 def scene_is_video(scene):
     img = scene.render.image_settings
     return jobs.is_video_output(getattr(img, "media_type", None), img.file_format)
@@ -468,15 +484,23 @@ class RENDER_OT_cli_launcher(bpy.types.Operator):
         use_subscenes = scene.use_presets and any(
             e.selected for e in scene.framerange_entries)
         if use_subscenes:
-            ranges = [(e.name.strip() or "render", e.start, e.end, e.name)
+            ranges = [(e.name.strip() or "render", e.start, e.end, e.name, e)
                       for e in scene.framerange_entries if e.selected]
         else:
             ranges = [(scene.cli_base_name.strip() or "render",
-                       scene.cli_start_frame, scene.cli_end_frame, "")]
-        for _base, start, end, label in ranges:
+                       scene.cli_start_frame, scene.cli_end_frame, "", None)]
+        for _base, start, end, label, entry in ranges:
             err = jobs.range_error(start, end, label)
             if err:
                 self.report({'ERROR'}, err + " - render not started")
+                return {'CANCELLED'}
+            # The pointer survives the camera being unlinked from the scene
+            # (or turned into another type): the render could not use it.
+            cam = entry.camera if entry else None
+            if cam is not None and (cam.type != 'CAMERA'
+                                    or scene.objects.get(cam.name) != cam):
+                self.report({'ERROR'}, f"SubScene '{label}': camera '{cam.name}' is "
+                                       f"not a camera of this scene - render not started")
                 return {'CANCELLED'}
 
         # --- where it goes
@@ -530,9 +554,16 @@ class RENDER_OT_cli_launcher(bpy.types.Operator):
         # --- one job per range
         timestamp = get_timestamp_string(scene.cli_timestamp_mode)
         is_video = scene_is_video(scene)
-        step = max(1, scene.frame_step)
+        scene_step = max(1, scene.frame_step)
+        samples_path = sample_setting(scene)
         job_list = []
-        for base, start, end, _label in ranges:
+        for base, start, end, _label, entry in ranges:
+            # --- this SubScene's overrides (none without SubScenes)
+            ov_step = entry.frame_step if entry and entry.frame_step > 1 else None
+            ov_samples = entry.samples if entry and samples_path else 0
+            ov_camera = entry.camera.name if entry and entry.camera else None
+            step = ov_step or scene_step
+            expr = jobs.override_expr(scene.name, samples_path, ov_samples, ov_camera)
             output_path = None
             if save_output:
                 folder = out_dir
@@ -558,9 +589,12 @@ class RENDER_OT_cli_launcher(bpy.types.Operator):
                 # -S: the scene the button was pressed in. Without it Blender
                 # renders the scene that was active when the file was saved.
                 "cmd": jobs.render_command(bpy.app.binary_path, render_blend,
-                                           start, end, output_path, scene.name),
+                                           start, end, output_path, scene.name,
+                                           frame_step=ov_step, python_expr=expr),
                 # the frames Blender will render (-a honours the frame step)
                 "frames": list(range(start, end + 1, step)),
+                # shown in the render console and the queue window
+                "overrides": jobs.override_summary(ov_samples, ov_step or 1, ov_camera),
                 "log": log,
                 # Where the compositor's File Output nodes write. Captured HERE,
                 # from the live scene, because the queue process never opens the

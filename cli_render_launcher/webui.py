@@ -354,6 +354,7 @@ def _job_entry(job, handle, started, now, baselines=None):
             "has_log": bool(job.log),
             "alone": bool(job.alone), "resumed": bool(job.resumed),
             "scene": getattr(job, "scene", None),
+            "overrides": getattr(job, "overrides", ""),
             "batch": getattr(job, "batch", 0),
             "note": job.note or ""}
 
@@ -381,6 +382,7 @@ def _idle_entry(job, state, baselines=None):
             "has_log": bool(job.log),
             "alone": bool(job.alone), "resumed": bool(job.resumed),
             "scene": getattr(job, "scene", None),
+            "overrides": getattr(job, "overrides", ""),
             "batch": getattr(job, "batch", 0),
             "note": job.note or ""}
 
@@ -696,6 +698,7 @@ _PAGE = r"""<!doctype html>
  .scenerow{display:flex;gap:16px;flex-wrap:wrap;margin-top:3px}
  .scname{color:var(--text);font-weight:600}
  .sctag{color:var(--dim);font-size:11px;margin-left:8px}
+ .ovtag{color:var(--orange);font-size:11px;margin-left:8px}
  /* the row "Show every file" opens on, briefly marked so the eye finds it */
  .files .focus{background:#22324a;transition:background 1.2s}
  .files .no{display:flex;justify-content:space-between;gap:12px;padding:4px 9px;
@@ -1068,7 +1071,9 @@ function buildCard(j){
   const nm = el('span','nm', j.name);
   const tag = el('span','tag');
   const sctag = el('span','sctag');
+  const ovtag = el('span','ovtag');
   left.appendChild(nm); left.append(' '); left.appendChild(tag); left.appendChild(sctag);
+  left.appendChild(ovtag);
   const meta = el('span','meta');
   row.appendChild(left); row.appendChild(meta);
   const track = el('div','track');
@@ -1086,7 +1091,7 @@ function buildCard(j){
     if (open.has(j.i)) open.delete(j.i); else open.add(j.i);
     e.classList.toggle('open');
   };
-  const rec = {el:e, tag:tag, sctag:sctag, meta:meta, fill:fill, note:note, grid:grid, body:body,
+  const rec = {el:e, tag:tag, sctag:sctag, ovtag:ovtag, meta:meta, fill:fill, note:note, grid:grid, body:body,
                lastFiles:-1, logAt:0, files:null, shots:null, pre:null, pathrow:null};
   cards.set(j.i, rec);
   return rec;
@@ -1488,6 +1493,8 @@ function paintCard(j){
   if (j.note) setText(rec.note, j.note);
   // which scene, once the queue holds more than one
   setText(rec.sctag, multiScene && j.scene && j.scene.name ? j.scene.name : '');
+  // this SubScene's own overrides (samples, frame step, camera)
+  setText(rec.ovtag, j.overrides || '');
   if (open.has(j.i)) paintBody(rec, j);
   return rec.el;
 }

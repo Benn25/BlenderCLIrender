@@ -247,6 +247,8 @@ def watch(job, writer=None, gpu_reader=gpu_monitor.read):
             writer.emit("print", text)
     for kind, text in flt.header():
         writer.emit(kind, text)
+    if job.get("overrides"):
+        writer.emit("print", "  overrides: %s" % job["overrides"])
     if job.get("note"):
         writer.emit("print", "  (%s)" % job["note"])
     line = gpu.describe()

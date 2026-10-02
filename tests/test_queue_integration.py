@@ -42,10 +42,13 @@ def check(label, got, want):
         print("        got  %r\n        want %r" % (got, want))
 
 
-def job(name, out, first, last, *extra):
+def job(name, out, first, last, *extra, step=1):
     cmd = [sys.executable, FAKE] + list(extra) + ["-b", "fake.blend", "-s", str(first),
-                                                  "-e", str(last), "-o", os.path.join(out, name + "_"), "-a"]
-    return {"name": name, "cmd": cmd, "frames": list(range(first, last + 1)),
+                                                  "-e", str(last)]
+    if step > 1:
+        cmd += ["-j", str(step)]
+    cmd += ["-o", os.path.join(out, name + "_"), "-a"]
+    return {"name": name, "cmd": cmd, "frames": list(range(first, last + 1, step)),
             "log": os.path.join(out, "logs", name + ".log")}
 
 
@@ -89,6 +92,25 @@ for name in ("a", "b"):
           {f: 1 for f in range(1, 9)})
 log = open(os.path.join(out, "logs", victim + ".log"), encoding="utf-8").read()
 check("resumed run appended to the same log", "===== resumed" in log, True)
+
+print("\nEvery 3rd frame (SubScene override), stopped and resumed")
+out = os.path.join(tmp, "step")
+said = []
+t0 = time.time()
+# a's frames are slow, so b - the job with the newest frame - is the one
+# stopped, and its resume must keep the step.
+res = runner.run({"jobs": [job("a", out, 1, 3, "--frame-s", "3"), job("b", out, 1, 40, step=3)],
+                  "parallel": 2,
+                  "gpu_warn": 66, "gpu_stop": 90, "pause_on_error": False},
+                 say=said.append, gpu_reader=gpu_script([(0, 40), (4, 95), (7, 30)]))
+print("   (%.1fs)  %s" % (time.time() - t0, " | ".join(said)))
+check("both jobs end OK", sorted((n, c) for n, c, _t, _x in res), [("a", 0), ("b", 0)])
+check("b was stopped and resumed",
+      (sum("stopping b" in m for m in said), any("started   b (resuming at frame" in m for m in said)),
+      (1, True))
+check("b: only every 3rd frame, each exactly once", renders(out, "b"),
+      {f: 1 for f in range(1, 41, 3)})
+check("a: untouched by b's step", renders(out, "a"), {f: 1 for f in range(1, 4)})
 
 print("\nOut of GPU memory: killed at once, retried alone")
 out = os.path.join(tmp, "oom")

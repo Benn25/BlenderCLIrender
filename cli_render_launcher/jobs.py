@@ -67,7 +67,8 @@ def output_name(base, timestamp, include_range, start, end, is_video):
     return name
 
 
-def render_command(blender, blend, start, end, output_path=None, scene=None):
+def render_command(blender, blend, start, end, output_path=None, scene=None,
+                   frame_step=None, python_expr=None):
     """Command line for one render job.
 
     `output_path` is None when the scene's Save Output is off: -o is then
@@ -78,15 +79,85 @@ def render_command(blender, blend, start, end, output_path=None, scene=None):
     active when the file was SAVED, not the one the button was pressed in - so
     launching from a second scene rendered the first one. -S must come after
     the .blend and before -s/-e/-a.
+
+    `frame_step` > 1 is passed as -j (Blender's frame jump): every Nth frame,
+    files keeping their real frame numbers. Left out otherwise, so the scene's
+    own Frame Step applies as before.
+
+    `python_expr` (see override_expr) runs after -S, so in the scene being
+    rendered, and before -a. --python-exit-code makes a failing override end
+    the render instead of rendering with the wrong settings.
     """
     cmd = [blender, "-b", blend]
     if scene:
         cmd += ["-S", scene]
+    if python_expr:
+        cmd += ["--python-exit-code", str(OVERRIDE_FAILED_CODE), "--python-expr", python_expr]
     cmd += ["-s", str(start), "-e", str(end)]
+    if frame_step and frame_step > 1:
+        cmd += ["-j", str(frame_step)]
     if output_path is not None:
         cmd += ["-o", output_path]
     cmd.append("-a")
     return cmd
+
+
+# Exit code of a render whose SubScene override could not be applied.
+OVERRIDE_FAILED_CODE = 77
+
+
+def override_expr(scene_name, samples_path=None, samples=0, camera=None):
+    """One line of Python applying a SubScene's overrides, or None.
+
+    Runs inside the background render only: the .blend (or its snapshot) is
+    never saved, so the user's file is untouched.
+
+    One line, no newlines: it travels as a single command-line argument, and
+    a newline inside an argument is not something to trust on every OS.
+
+    `samples_path` is the engine's sample setting relative to the scene
+    ("cycles.samples", "eevee.taa_render_samples"), chosen in Blender where
+    the engine is known.
+
+    The camera: camera markers on the timeline switch scene.camera at every
+    frame of an animation render, so setting the camera alone would be undone
+    at the first marker. The markers lose their camera link - in this render
+    only - and then the camera is set.
+    """
+    # ascii(), not repr(): names with accents become \xe9 escapes, so the
+    # argument itself is plain ASCII whatever the console's code page.
+    parts = []
+    if samples and samples_path:
+        parts.append("s.%s=%d" % (samples_path, int(samples)))
+    if camera:
+        parts.append("c=s.objects[%s]" % ascii(camera))
+        parts.append("[setattr(m,'camera',None) for m in s.timeline_markers]")
+        parts.append("s.camera=c")
+    if not parts:
+        return None
+    # The confirmation names nothing the user typed: printing a name with an
+    # accent to a cp1252 pipe would raise, and fail the render (exit code).
+    return "; ".join(["import bpy", "s=bpy.data.scenes[%s]" % ascii(scene_name)] + parts
+                     + ["print('CLI Render: SubScene overrides applied')"])
+
+
+def override_summary(samples=0, frame_step=1, camera=None):
+    """'16 samples · every 4th frame · camera CloseUp', or '' with none."""
+    bits = []
+    if samples:
+        bits.append("%d samples" % samples)
+    if frame_step and frame_step > 1:
+        bits.append("every %s frame" % ordinal(frame_step))
+    if camera:
+        bits.append("camera %s" % camera)
+    return " · ".join(bits)
+
+
+def ordinal(n):
+    """2 -> '2nd', 11 -> '11th', 23 -> '23rd'."""
+    if 10 <= n % 100 <= 20:
+        return "%dth" % n
+    return "%d%s" % (n, {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th"))
 
 
 def snapshot_path(blend_path, stamp):
