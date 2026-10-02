@@ -13,7 +13,7 @@ Last updated: 2026-10-02 (listing prepared for 5.12.3, not saved yet: the owner 
 | Public URL | https://blenderbenn.gumroad.com/l/renderfromCL (custom URL `renderfromCL`) |
 | Name | render from command line (Blender addon) |
 | Summary | A Blender extension (.zip): drag it into Blender to install. |
-| Price | **Free** — pay what you want, $0 minimum, $1.69 suggested. *Keep it free* (owner's decision). |
+| Price | **Free** — pay what you want, $0 minimum, $5 suggested (was a joke $69.69 until 2026-10-02). *Keep it free* (owner's decision). |
 | Content (download) | `cli_render_launcher-5.12.3.zip` only (older zips and the old `.py` removed) |
 | Size (additional details) | filled in automatically by Gumroad from the files |
 
