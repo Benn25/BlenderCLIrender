@@ -56,9 +56,16 @@ OOM_ALONE_RETRIES = 1
 
 
 def with_start(cmd, frame):
-    """The same render command, starting at `frame` (replaces -s)."""
+    """The same render command, starting at `frame` (replaces -s).
+
+    The -s that is followed by `<n> -e`: a scene called "-s" (passed as -S -s)
+    must not be mistaken for it.
+    """
     cmd = list(cmd)
-    i = cmd.index("-s")
+    i = next((k for k in range(len(cmd) - 2)
+              if cmd[k] == "-s" and cmd[k + 2] == "-e"), None)
+    if i is None:
+        i = cmd.index("-s")
     cmd[i + 1] = str(frame)
     return cmd
 
