@@ -3,8 +3,8 @@
 Record of the Gumroad product page for this add-on, so future sessions can update it
 without re-discovering everything. **Update this file whenever the listing changes.**
 
-Last updated: 2026-10-03. Saved by the owner: 5.12.x text and the 5.13.0 zip. Prepared after that,
-not saved yet: the 5.13 overrides text and image (heading, list item, "SubScene overrides" section).
+Last updated: 2026-10-04. Prepared, not saved yet: the 5.14 text (below) and the
+`cli_render_launcher-5.14.1.zip` download replacing 5.13.0. The 5.13 overrides text was saved by the owner.
 
 ## Product
 
@@ -15,7 +15,7 @@ not saved yet: the 5.13 overrides text and image (heading, list item, "SubScene 
 | Name | render from command line (Blender addon) |
 | Summary | A Blender extension (.zip): drag it into Blender to install. |
 | Price | **Free** — pay what you want, $0 minimum, $5 suggested (was a joke $69.69 until 2026-10-02). *Keep it free* (owner's decision). |
-| Content (download) | `cli_render_launcher-5.13.0.zip` only (uploaded by the owner) (older zips and the old `.py` removed) |
+| Content (download) | `cli_render_launcher-5.14.1.zip` only (prepared 2026-10-04) (older zips and the old `.py` removed) |
 | Size (additional details) | filled in automatically by Gumroad from the files |
 
 ## Images
@@ -41,18 +41,21 @@ screenshots (2026-10-02, 5.12.3, crystals3.blend) are new and current.
 1. Intro (bold): render from the command line in the background while you keep working.
    Second line: separate renders in their own consoles; you can close Blender, the queue keeps going.
 2. Image: full panel.
-3. **🚀 Version 5.13 — big update** — "grown a lot since this page was first written", free update
-   in the Gumroad library. List (newest first): SubScene overrides (5.13) · queue window · one queue per .blend ·
+3. **🚀 Version 5.14 — big update** — "grown a lot since this page was first written", free update
+   in the Gumroad library. List (newest first): SubScene overrides (5.13; 5.14 adds "only the frames you list") ·
+   queue window (5.14: Open folder, stays available after the render) · queue window · one queue per .blend ·
    renders the scene you launched from · VRAM gauge · clean render console · GPU memory protection · out-of-memory
    recovery · failed render keeps its console open · SubScenes at once · queue runs on its own ·
    render the current state · compositor-only renders · a subfolder per SubScene · cleaner file
    names · safety checks · proper Blender extension · macOS & Linux fixes.
 4. **What's in the panel** (Properties › Render, red CLI RENDER panel):
    Name & frame range · SubScenes: batch your shots (+ image) · SubScene overrides (samples /
-   every N frames / camera, "your .blend is never changed", row icons; + image) · Output & file names ·
+   every N frames / only frames (5.14, with the video note) / camera, "your .blend is never changed",
+   row icons; + image) · Output & file names ·
    Compositor-only renders (+ image) · Render the current state · Safety checks.
 4b. **The queue window** (5.12) — image `queue_details_3outputs.jpg` + bullets (jobs, progress,
-   ETA, log, rendered frames; 127.0.0.1 only, read-only; on by default, switch in preferences).
+   ETA, log, rendered frames; 5.14: "Open folder" button, stays available after the render until closed;
+   127.0.0.1 only; on by default, switch in preferences). Safety checks list also names the Only Frames check.
 5. **The render console** — banner image, an example console block (code block), bullets
    (progress, problems only, nothing lost, Clean/Detailed/Full in preferences).
    **GPU memory protection** subsection (alarm 66%, admission, pause at 90% + resume same frame,
