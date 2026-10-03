@@ -3,8 +3,8 @@
 Record of the Gumroad product page for this add-on, so future sessions can update it
 without re-discovering everything. **Update this file whenever the listing changes.**
 
-Last updated: 2026-10-04. Prepared, not saved yet: the 5.14 text (below) and the
-`cli_render_launcher-5.14.1.zip` download replacing 5.13.0. The 5.13 overrides text was saved by the owner.
+Last updated: 2026-10-04. Live (saved by the owner): the 5.14 text below and the
+`cli_render_launcher-5.14.1.zip` download. The same zip is also a GitHub release (tag `release`).
 
 ## Product
 
@@ -15,7 +15,7 @@ Last updated: 2026-10-04. Prepared, not saved yet: the 5.14 text (below) and the
 | Name | render from command line (Blender addon) |
 | Summary | A Blender extension (.zip): drag it into Blender to install. |
 | Price | **Free** — pay what you want, $0 minimum, $5 suggested (was a joke $69.69 until 2026-10-02). *Keep it free* (owner's decision). |
-| Content (download) | `cli_render_launcher-5.14.1.zip` only (prepared 2026-10-04) (older zips and the old `.py` removed) |
+| Content (download) | `cli_render_launcher-5.14.1.zip` only (saved 2026-10-04) (older zips and the old `.py` removed) |
 | Size (additional details) | filled in automatically by Gumroad from the files |
 
 ## Images
