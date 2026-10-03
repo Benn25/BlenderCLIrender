@@ -6,7 +6,8 @@
 
 A Blender add-on (extension, Blender 4.2+ including 5.x) that launches separate background renders
 from a panel in **Properties › Render**, with your frame ranges, file names and output folder.
-Get the ready-to-install zip on [Gumroad](https://blenderbenn.gumroad.com/l/renderfromCL) (free, name a price if you like).
+Get the ready-to-install zip on [Gumroad](https://blenderbenn.gumroad.com/l/renderfromCL) (free, name a price if you like),
+or from this repository's [Releases](https://github.com/Benn25/BlenderCLIrender/releases).
 
 <img src="docs/images/panel.png" alt="The CLI Render panel in Properties > Render" width="552">
 
