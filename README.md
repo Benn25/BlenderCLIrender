@@ -20,7 +20,8 @@ Get the ready-to-install zip on [Gumroad](https://blenderbenn.gumroad.com/l/rend
   is never changed. An icon on the SubScene's row shows what is overridden.
 - **The queue runs on its own** — close Blender, the renders keep going.
 - **Queue window in your browser** — a read-only page (127.0.0.1 only) showing every job, its progress,
-  its log and the frames it has rendered (main output and compositor File Output nodes). On by default;
+  its log and the frames it has rendered (main output and compositor File Output nodes), with a button to open
+  each output folder. It stays available after the queue ends, until you close it. On by default;
   the queue's own console is then hidden and its output goes to a log.
 - **One queue per .blend** — launching again from the same file joins the running queue as its own batch,
   with its own "SubScenes at once"; the GPU rules then watch every job of that file.
