@@ -44,6 +44,8 @@ A handle offers:  poll() -> None while running, else the exit code
 import collections
 import time
 
+import jobs
+
 STOP_CODE = 75          # the job's console stopped Blender on request
 OOM_CODE = 76           # the job's console killed Blender: out of GPU memory
 OVERRIDE_CODE = 77      # a SubScene override failed (= jobs.OVERRIDE_FAILED_CODE)
@@ -69,6 +71,18 @@ def with_start(cmd, frame):
         i = cmd.index("-s")
     cmd[i + 1] = str(frame)
     return cmd
+
+
+def resume_command(cmd, frames):
+    """The command that renders `frames` (what is left of the job).
+
+    An "Only frames" job ends with `-f <list>`: the list is rewritten to the
+    frames still to do - a start frame means nothing in a list of scattered
+    frames. Any other job ends with -a: only -s moves.
+    """
+    if len(cmd) >= 2 and cmd[-2] == "-f":
+        return list(cmd[:-1]) + [jobs.frames_arg(frames)]
+    return with_start(cmd, frames[0])
 
 
 def remaining_from(frames, frame):
@@ -115,7 +129,7 @@ class Job:
     def as_launch(self):
         cmd = self.cmd
         if self.resumed and self.frames:
-            cmd = with_start(cmd, self.frames[0])
+            cmd = resume_command(cmd, self.frames)
         return {"name": self.name, "cmd": cmd, "frames": self.frames,
                 "log": self.log, "log_append": self.resumed, "note": self.note,
                 "overrides": self.overrides}

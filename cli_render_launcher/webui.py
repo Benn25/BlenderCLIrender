@@ -4,16 +4,24 @@ Blender's bundled Python has NO GUI toolkit - measured on 5.2.2 / Python
 3.13.13: no tkinter, no PySide6, no PyQt5, no pystray, no PIL. `http.server`
 is there, so the browser does the drawing and this stays dependency-free.
 
-It is a VIEW ONLY. The queue runs exactly as before whether anyone opens the
-page or not: the server reads the scheduler's state on a background thread and
-never writes to it, and it runs no commands on anyone's behalf. A closed
-browser, a refused port or a crashed request cannot disturb a render.
+It is a VIEW. The queue runs exactly as before whether anyone opens the page
+or not: the server reads the scheduler's state on a background thread and
+never writes to it. A closed browser, a refused port or a crashed request
+cannot disturb a render.
 
-Served on 127.0.0.1 only. Four routes, all GET:
-    /               the page
-    /api/state      the whole queue, as JSON
-    /api/log        the tail of one job's log
-    /file           one rendered frame, for the preview and its links
+Served on 127.0.0.1 only. Routes:
+    GET  /               the page
+    GET  /api/state      the whole queue, as JSON
+    GET  /api/log        the tail of one job's log
+    GET  /file           one rendered frame, for the preview and its links
+    POST /api/open       open one job's output folder in the file browser
+
+/api/open is the one route that does something on the machine, so it is
+locked down: the caller names a job and an output BY NUMBER, never a path -
+the folder is that job's own output folder, looked up here - and it needs the
+token written into the page, which another web site cannot read (and a
+cross-site request with that custom header is refused by the browser's
+preflight, which this server never answers).
 
 `/file` is the only one that touches the disk, and it serves a file ONLY if
 its real path sits inside that job's own output directory and starts with that
@@ -22,10 +30,14 @@ job's output prefix - see `_allowed`. Nothing else on the machine is reachable.
 No bpy - tested with plain Python (tests/test_webui.py).
 """
 import glob
+import hmac
 import json
 import mimetypes
 import os
 import re
+import secrets
+import subprocess
+import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -483,6 +495,9 @@ class _Handler(BaseHTTPRequestHandler):
     baselines = None     # {prefix: {name: (mtime_ns, size)}} from snapshot()
     state_fn = None
     page = b""
+    token = ""
+    opener = None        # open_folder, or a stand-in in tests
+    seen = None          # [time of the last /api/state request]
 
     def log_message(self, *a):          # never scribble over the render console
         pass
@@ -516,6 +531,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(self.page, "text/html; charset=utf-8")
             return
         if path == "/api/state":
+            if self.seen is not None:
+                self.seen[0] = time.time()  # the window is open: keep serving it
             try:
                 data = self.state_fn()
             except Exception as exc:
@@ -579,20 +596,68 @@ class _Handler(BaseHTTPRequestHandler):
             return
         self.send_error(404)
 
+    def do_POST(self):
+        parts = urlparse(self.path)
+        given = self.headers.get("X-CLI-Token") or ""
+        if (parts.path != "/api/open" or not self.token
+                or not hmac.compare_digest(given, self.token)):
+            self.send_error(403)
+            return
+        query = parse_qs(parts.query)
+        job = self._job(query)
+        try:
+            seq = int((query.get("seq") or ["-1"])[0])
+        except (ValueError, TypeError):
+            seq = -1
+        prefixes = job_prefixes(job.get("cmd"), job.get("extra_outputs")) if job else []
+        if not (0 <= seq < len(prefixes)):
+            self.send_error(404)
+            return
+        folder = os.path.dirname(prefixes[seq][0])
+        if not os.path.isdir(folder):
+            self.send_error(404)          # nothing written there yet
+            return
+        try:
+            self.opener(folder)
+        except Exception:
+            self.send_error(500)
+            return
+        self._send(b"ok", "text/plain; charset=utf-8")
 
-def serve(state_fn, page_html, port=0, jobs_fn=None, baselines=None):
+
+def open_folder(folder):
+    """Show `folder` in the system's file browser."""
+    if sys.platform == "win32":
+        os.startfile(folder)            # noqa: the Explorer window, as a double-click would
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", folder])
+    else:
+        subprocess.Popen(["xdg-open", folder])
+
+
+def serve(state_fn, page_html, port=0, jobs_fn=None, baselines=None, opener=None):
     """Start the server on a daemon thread. Returns (url, stop) or (None, None).
+
+    `stop.idle_s()` is how long since the page last asked for the state: the
+    runner keeps a finished queue's window alive until that grows long, i.e.
+    until the window is closed.
 
     Never raises: a port the OS will not give us is a reason to carry on
     without a window, not to lose a render queue.
     """
+    # A fresh secret per queue, written into the page: /api/open wants it back.
+    token = secrets.token_urlsafe(18)
+    seen = [time.time()]
     handler = type("_BoundHandler", (_Handler,),
                    {"state_fn": staticmethod(state_fn),
                     "jobs_fn": staticmethod(jobs_fn or (lambda: [])),
                     # the SAME dict the runner extends when a launch joins:
                     # `baselines or {}` would swap an empty one for a copy
                     "baselines": baselines if baselines is not None else {},
-                    "page": page_html.encode("utf-8")})
+                    "token": token,
+                    "opener": staticmethod(opener or open_folder),
+                    "seen": seen,
+                    "page": page_html.replace("__TOKEN__", token).encode("utf-8")})
     # The caller normally names a port it already reserved, so the address can
     # be shown in Blender before the queue even starts. If something took it in
     # between, any free port still beats no window.
@@ -614,6 +679,7 @@ def serve(state_fn, page_html, port=0, jobs_fn=None, baselines=None):
             srv.server_close()
         except Exception:
             pass
+    stop.idle_s = lambda: time.time() - seen[0]
     return "http://%s:%d/" % (HOST, srv.server_address[1]), stop
 
 
@@ -830,6 +896,8 @@ _PAGE = r"""<!doctype html>
   </div>
 </div>
 <script>
+// Proves to /api/open that the request comes from this page (see the module doc).
+const TOKEN = '__TOKEN__';
 /* The page is updated IN PLACE, never rebuilt.
    A queue runs for hours and this window stays open: replacing the DOM each
    second would refetch every preview image (the responses are no-store),
@@ -1182,7 +1250,20 @@ function buildSeq(j, sq){
       setTimeout(function(){ cp.textContent = 'Copy'; }, 1200);
     });
   };
-  pathrow.appendChild(code); pathrow.appendChild(cp);
+  // Open the folder in the file browser: the queue looks the folder up from
+  // the job and output numbers, the page never sends a path.
+  const op = el('button', null, 'Open folder');
+  op.onclick = function(ev){
+    ev.stopPropagation();
+    fetch('/api/open?job=' + j.i + '&seq=' + sq.i,
+          {method:'POST', headers:{'X-CLI-Token': TOKEN}})
+      .then(function(r){
+        op.textContent = r.ok ? 'Opened' : (r.status === 404 ? 'Nothing there yet' : 'Could not open');
+      })
+      .catch(function(){ op.textContent = 'Queue closed'; })
+      .then(function(){ setTimeout(function(){ op.textContent = 'Open folder'; }, 1500); });
+  };
+  pathrow.appendChild(code); pathrow.appendChild(cp); pathrow.appendChild(op);
   head.appendChild(pathrow);
   e.appendChild(head);
   const sheetcap = el('div','sheetcap');
@@ -1571,7 +1652,7 @@ async function tick(){
       if (!seen.has(uid)){ cards.get(uid).el.remove(); cards.delete(uid); }
     });
     setText(document.getElementById('foot'), s.queue.all_done
-      ? 'all jobs finished — you can close this window'
+      ? 'all jobs finished — the images stay available while this window is open'
       : 'updating every second · click a job for details');
   }
   setTimeout(tick, __POLL__);

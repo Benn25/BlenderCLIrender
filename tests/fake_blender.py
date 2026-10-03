@@ -11,9 +11,17 @@ import sys
 import time
 
 a = sys.argv
-s = int(a[a.index("-s") + 1])
-e = int(a[a.index("-e") + 1])
-j = int(a[a.index("-j") + 1]) if "-j" in a else 1      # frame jump, like Blender's
+if "-f" in a:                                   # -f 12,40,100..120, like Blender's
+    todo = []
+    for item in a[a.index("-f") + 1].split(","):
+        lo, _, hi = item.partition("..")
+        todo += list(range(int(lo), int(hi or lo) + 1))
+    s, e = todo[0], todo[-1]
+else:
+    s = int(a[a.index("-s") + 1])
+    e = int(a[a.index("-e") + 1])
+    j = int(a[a.index("-j") + 1]) if "-j" in a else 1      # frame jump, like Blender's
+    todo = list(range(s, e + 1, j))
 out = a[a.index("-o") + 1]
 oom_at = int(a[a.index("--oom-at") + 1]) if "--oom-at" in a else 0
 frame_s = float(a[a.index("--frame-s") + 1]) if "--frame-s" in a else 0.6
@@ -24,8 +32,9 @@ def say(text):
 
 
 say('00:00.100  blend            | Read blend: "fake.blend"')
-say("00:00.200  render           | Rendering animation (frames %d..%d)" % (s, e))
-for f in range(s, e + 1, j):
+if "-f" not in a:
+    say("00:00.200  render           | Rendering animation (frames %d..%d)" % (s, e))
+for f in todo:
     say("00:00.300  render           | Rendering frame %d" % f)
     if oom_at and f == oom_at and s < oom_at:
         say("00:00.400  cycles           | ERROR CUDA error: Out of memory in "

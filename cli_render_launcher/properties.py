@@ -39,6 +39,11 @@ class FrameRangeEntry(bpy.types.PropertyGroup):
         description=("Render one frame in N, for quick previews. Files keep "
                      "their real frame numbers. 1 = every frame"),
         default=1, min=1, soft_max=100)
+    frames: bpy.props.StringProperty(
+        name="Only Frames",
+        description=("Render only these frames of the SubScene, e.g. 12, 40, 100-120. "
+                     "Empty = the whole range. Replaces Every N Frames when set"),
+        default="")
     camera: bpy.props.PointerProperty(
         type=bpy.types.Object,
         name="Camera",
@@ -48,7 +53,8 @@ class FrameRangeEntry(bpy.types.PropertyGroup):
         poll=_scene_camera_poll)
 
     def has_overrides(self):
-        return bool(self.samples or self.frame_step > 1 or self.camera)
+        return bool(self.samples or self.frame_step > 1 or self.camera
+                    or self.frames.strip())
 
 
 CLASSES = (

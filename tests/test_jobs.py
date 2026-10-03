@@ -139,6 +139,56 @@ check("same exit code on both sides", scheduler.OVERRIDE_CODE, jobs.OVERRIDE_FAI
 job = scheduler.Job({"name": "a", "cmd": cmd, "frames": [1, 5, 9], "overrides": "every 4th frame"})
 check("the console gets the overrides in words", job.as_launch()["overrides"], "every 4th frame")
 
+print("\nOnly frames: reading the list")
+P = jobs.parse_frames
+check("single frames, commas or spaces", P("12, 40 300"), ([12, 40, 300], None))
+check("ranges both ways, ends included", P("100-102, 200..201"), ([100, 101, 102, 200, 201], None))
+check("spaces around - and .. are fine", P("100 - 102,  5 .. 6"), ([5, 6, 100, 101, 102], None))
+check("overlaps and repeats merged, sorted", P("10-12, 11, 9, 12"), ([9, 10, 11, 12], None))
+check("one frame range", P("7-7"), ([7], None))
+check("inside the SubScene: ok", P("900, 925", 900, 925), ([900, 925], None))
+for text, start, end, want in [
+        ("", None, None, "no frames given"),
+        ("   ", None, None, "no frames given"),
+        ("12, abc", None, None, "'abc' is not a frame or a range"),
+        ("1.5", None, None, "'1.5' is not a frame or a range"),
+        ("10-", None, None, "'10-' is not a frame or a range"),
+        ("120-100", None, None, "'120-100': the range goes backwards"),
+        ("-5", None, None, "'-5': negative frames cannot be listed"),
+        ("899", 900, 925, "frame 899 is outside this SubScene (900-925)"),
+        ("920-930", 900, 925, "frame 930 is outside this SubScene (900-925)")]:
+    got = P(text, start, end)
+    check("refused: %r" % text, (got[0], (got[1] or "").startswith(want)), (None, True))
+
+print("\nOnly frames: the -f argument")
+check("runs of 3+ become a..b, pairs stay listed",
+      jobs.frames_arg([12, 40, 41, 100, 101, 102, 103, 300]), "12,40,41,100..103,300")
+cmd = jobs.render_command("B", "f.blend", 900, 925, "o/x_", "Sc", frame_step=4,
+                          python_expr="X", frame_list=[900, 905, 906, 907])
+check("-f replaces -s/-e/-j/-a, and comes last (after -o)",
+      cmd[-4:], ["-o", "o/x_", "-f", "900,905..907"])
+check("no -s, -e, -j or -a left", [a for a in cmd if a in ("-s", "-e", "-j", "-a")], [])
+check("summary: short list spelled out",
+      jobs.override_summary(0, 4, None, [12, 40, 100, 101, 102]), "frames 12, 40, 100-102")
+check("summary: long list counted",
+      jobs.override_summary(16, 1, None, list(range(1, 200, 3))), "16 samples · 67 chosen frames")
+resumed = scheduler.resume_command(cmd, [906, 907])
+check("resume: the list shrinks to the frames left", resumed[-2:], ["-f", "906,907"])
+check("resume: the rest of the command is untouched", resumed[:-1], cmd[:-1])
+plain = jobs.render_command("B", "f.blend", 1, 9, None, "-f")
+check("resume of a normal job in a scene called '-f' moves -s only",
+      scheduler.resume_command(plain, [5, 6, 7, 8, 9]),
+      ["B", "-b", "f.blend", "-S", "-f", "-s", "5", "-e", "9", "-a"])
+
+print("\nOnly frames into a video: the main video is skipped")
+sc = fake_scene("S")
+sc.render = NS()
+sc.render.save_output = True
+run_expr(jobs.override_expr("S", None, 0, None, main_output_off=True), sc)
+check("Save Output turned off inside the render", sc.render.save_output, False)
+check("and said in words", jobs.override_summary(0, 1, None, [5, 9], True), "frames 5, 9 · no main video")
+check("nothing to skip: no python at all", jobs.override_expr("S", None, 0, None), None)
+
 print("\nSubScene overrides: in words")
 check("all three", jobs.override_summary(16, 4, "CloseUp"),
       "16 samples · every 4th frame · camera CloseUp")

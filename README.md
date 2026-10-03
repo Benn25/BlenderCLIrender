@@ -15,11 +15,13 @@ Get the ready-to-install zip on [Gumroad](https://blenderbenn.gumroad.com/l/rend
 - **SubScenes** — save frame ranges as named presets, tick the ones you want and render them in one click,
   one by one or several at once (you choose how many). Optional subfolder per SubScene. The list order is the render order.
 - **SubScene overrides** — per SubScene: its own samples, every Nth frame only (quick previews, real frame numbers kept),
-  and a forced camera that camera markers on the timeline cannot switch. Applied inside that render only: the .blend
+  only the frames you list (`12, 40, 100-120` — re-render just the broken ones), and a forced camera that camera
+  markers on the timeline cannot switch. Applied inside that render only: the .blend
   is never changed. An icon on the SubScene's row shows what is overridden.
 - **The queue runs on its own** — close Blender, the renders keep going.
 - **Queue window in your browser** — a read-only page (127.0.0.1 only) showing every job, its progress,
-  its log and the frames it has rendered (main output and compositor File Output nodes). On by default;
+  its log and the frames it has rendered (main output and compositor File Output nodes), with a button to open
+  each output folder. It stays available after the queue ends, until you close it. On by default;
   the queue's own console is then hidden and its output goes to a log.
 - **One queue per .blend** — launching again from the same file joins the running queue as its own batch,
   with its own "SubScenes at once"; the GPU rules then watch every job of that file.

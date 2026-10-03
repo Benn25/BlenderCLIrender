@@ -195,6 +195,29 @@ def scene_is_video(scene):
     return jobs.is_video_output(getattr(img, "media_type", None), img.file_format)
 
 
+ONLY_FRAMES_VIDEO_ERROR = ("the main output is a video, and a frame list renders each frame "
+                           "on its own (each would replace the last). Use an image format, "
+                           "or add a File Output node")
+
+
+def only_frames_video(scene):
+    """What an "Only frames" list does with the scene's main output.
+
+    None     images (or Save Output off): nothing special.
+    'skip'   a video: it is skipped for that render (Save Output off inside it,
+             Blender 5.1+) and the compositor's File Output nodes write the frames.
+    str      a video and nothing else writes files: the reason it cannot render.
+
+    Measured on 5.2.2: `-f 1101,1104,1110..1112` into an mp4 left a 1-frame
+    video named after the scene's whole range.
+    """
+    if not scene_saves_output(scene) or not scene_is_video(scene):
+        return None
+    if hasattr(scene.render, "save_output") and compositor_writes_files(scene):
+        return 'skip'
+    return ONLY_FRAMES_VIDEO_ERROR
+
+
 # --------------------------------------------------------------------------
 # Launching
 # --------------------------------------------------------------------------
@@ -502,6 +525,15 @@ class RENDER_OT_cli_launcher(bpy.types.Operator):
                 self.report({'ERROR'}, f"SubScene '{label}': camera '{cam.name}' is "
                                        f"not a camera of this scene - render not started")
                 return {'CANCELLED'}
+            if entry and entry.frames.strip():
+                _frames, err = jobs.parse_frames(entry.frames, start, end)
+                video = only_frames_video(scene)
+                if not err and video not in (None, 'skip'):
+                    err = video
+                if err:
+                    self.report({'ERROR'}, f"SubScene '{label}', Only Frames: {err} "
+                                           f"- render not started")
+                    return {'CANCELLED'}
 
         # --- where it goes
         save_output = scene_saves_output(scene)
@@ -559,13 +591,21 @@ class RENDER_OT_cli_launcher(bpy.types.Operator):
         job_list = []
         for base, start, end, _label, entry in ranges:
             # --- this SubScene's overrides (none without SubScenes)
-            ov_step = entry.frame_step if entry and entry.frame_step > 1 else None
+            # "Only frames" (already validated above) replaces the frame step
+            ov_frames = (jobs.parse_frames(entry.frames, start, end)[0]
+                         if entry and entry.frames.strip() else None)
+            ov_step = (entry.frame_step if entry and entry.frame_step > 1
+                       and not ov_frames else None)
             ov_samples = entry.samples if entry and samples_path else 0
             ov_camera = entry.camera.name if entry and entry.camera else None
+            # a frame list cannot make a video: the main video is skipped and
+            # the File Output nodes write the frames (refused above otherwise)
+            main_off = bool(ov_frames) and only_frames_video(scene) == 'skip'
             step = ov_step or scene_step
-            expr = jobs.override_expr(scene.name, samples_path, ov_samples, ov_camera)
+            expr = jobs.override_expr(scene.name, samples_path, ov_samples, ov_camera,
+                                      main_output_off=main_off)
             output_path = None
-            if save_output:
+            if save_output and not main_off:
                 folder = out_dir
                 if use_subscenes and scene.preset_use_subfolder:
                     folder = os.path.join(out_dir, base)
@@ -590,11 +630,13 @@ class RENDER_OT_cli_launcher(bpy.types.Operator):
                 # renders the scene that was active when the file was saved.
                 "cmd": jobs.render_command(bpy.app.binary_path, render_blend,
                                            start, end, output_path, scene.name,
-                                           frame_step=ov_step, python_expr=expr),
+                                           frame_step=ov_step, python_expr=expr,
+                                           frame_list=ov_frames),
                 # the frames Blender will render (-a honours the frame step)
-                "frames": list(range(start, end + 1, step)),
+                "frames": ov_frames or list(range(start, end + 1, step)),
                 # shown in the render console and the queue window
-                "overrides": jobs.override_summary(ov_samples, ov_step or 1, ov_camera),
+                "overrides": jobs.override_summary(ov_samples, ov_step or 1, ov_camera,
+                                                   ov_frames, main_off),
                 "log": log,
                 # Where the compositor's File Output nodes write. Captured HERE,
                 # from the live scene, because the queue process never opens the
