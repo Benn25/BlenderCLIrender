@@ -1,9 +1,10 @@
 import os
+import textwrap
 
 import bpy
 
 from . import jobs
-from .operators import sample_setting, scene_is_video, scene_saves_output
+from .operators import only_frames_video, sample_setting, scene_is_video, scene_saves_output
 
 try:
     import tomllib
@@ -33,12 +34,44 @@ def override_icon(entry):
     One override shows its own icon; several at once show the monkey, and the
     Overrides box under the list says which.
     """
+    frames_text = entry.frames.strip()
+    if frames_text and subscene_frames(entry)[1]:
+        return 'ERROR'                  # a list that cannot render: say so on the row
     active = [icon for icon, on in (('VIEW_CAMERA', entry.camera is not None),
                                     ('NODE_TEXTURE', entry.samples > 0),
-                                    ('RENDER_RESULT', entry.frame_step > 1)) if on]
+                                    # frame related, one icon: every N, or a list
+                                    ('RENDER_RESULT', entry.frame_step > 1 or bool(frames_text)))
+              if on]
     if not active:
         return 'BLANK1'
     return active[0] if len(active) == 1 else 'MONKEY'
+
+
+def subscene_frames(entry):
+    """(frames, error) of the SubScene's "Only frames" list; (None, None) if empty."""
+    if not entry.frames.strip():
+        return None, None
+    frames, err = jobs.parse_frames(entry.frames, entry.start, entry.end)
+    if not err:
+        video = only_frames_video(entry.id_data)    # id_data: the SubScene's scene
+        if video not in (None, 'skip'):
+            return None, video
+    return frames, err
+
+
+def wrapped_labels(layout, text, icon, width=48):
+    """A long message as several labels: one label would be cut off."""
+    for i, line in enumerate(textwrap.wrap(text, width)):
+        layout.label(text=line, icon=icon if i == 0 else 'BLANK1')
+
+
+# The syntax help under "Only Frames": (example, what it does)
+FRAMES_HELP = (
+    ("12, 40, 300", "single frames"),
+    ("100-120", "a range, both ends included"),
+    ("100..120", "the same, Blender's way"),
+    ("12, 100-120, 300", "mix them freely"),
+)
 
 
 class FRAMERANGE_UL_List(bpy.types.UIList):
@@ -161,8 +194,12 @@ class RENDER_PT_cli_launcher(bpy.types.Panel):
         entry = entries[scene.framerange_index]
         header, body = layout.panel("CLI_subscene_overrides", default_closed=True)
         header.enabled = scene.use_presets
+        frames, frames_error = subscene_frames(entry)
         summary = jobs.override_summary(entry.samples, entry.frame_step,
-                                        entry.camera.name if entry.camera else None)
+                                        entry.camera.name if entry.camera else None,
+                                        frames)
+        if frames_error:
+            summary = (summary + "  ·  " if summary else "") + "frame list invalid"
         icon = override_icon(entry)
         header.label(text="Overrides · %s%s" % (entry.name, ("  ·  " + summary) if summary else ""),
                      icon='NONE' if icon == 'BLANK1' else icon)
@@ -174,7 +211,35 @@ class RENDER_PT_cli_launcher(bpy.types.Panel):
         if entry.samples and sample_setting(scene) is None:
             col.label(text="%s has no samples setting: ignored"
                       % scene.render.engine.title(), icon='INFO')
-        col.prop(entry, "frame_step", text="Every N Frames")
+        col.separator()
+        col.prop(entry, "frames", text="Only Frames")
+        if frames_error:
+            msg = col.column(align=True)
+            msg.alert = True
+            wrapped_labels(msg, frames_error[0].upper() + frames_error[1:], 'ERROR')
+        elif frames:
+            col.label(text="%d frame%s will render" % (len(frames), "s" if len(frames) > 1 else ""),
+                      icon='CHECKMARK')
+            if only_frames_video(scene) == 'skip':
+                wrapped_labels(col.column(align=True), "The main video is skipped for this "
+                               "SubScene: the File Output nodes write the frames.", 'INFO')
+        help_header, help_body = col.panel("CLI_frames_help", default_closed=True)
+        help_header.label(text="How to write frames", icon='QUESTION')
+        if help_body is not None:
+            box = help_body.box()
+            for example, meaning in FRAMES_HELP:
+                split = box.split(factor=0.42)
+                split.label(text=example)
+                split.label(text=meaning)
+            box.label(text="Commas or spaces between items.")
+            box.label(text="Frames of this SubScene only: %d-%d." % (entry.start, entry.end))
+            box.label(text="Empty = the whole SubScene.")
+        row = col.row()
+        row.active = not frames
+        row.prop(entry, "frame_step", text="Every N Frames")
+        if frames and entry.frame_step > 1:
+            col.label(text="Every N Frames is ignored: Only Frames is set", icon='INFO')
+        col.separator()
         col.prop(entry, "camera", text="Camera")
         if entry.camera and any(m.camera for m in scene.timeline_markers):
             col.label(text="Camera markers are ignored for this SubScene", icon='INFO')

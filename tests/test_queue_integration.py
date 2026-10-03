@@ -23,6 +23,7 @@ sys.path.insert(0, (sorted(glob.glob(os.path.join(HERE, "..", "V*")), key=lambda
 
 import runner  # noqa: E402
 import scheduler  # noqa: E402
+import jobs  # noqa: E402
 
 # Fast timings for the test (the real ones are seconds apart).
 scheduler.TICK_S = 0.1
@@ -49,6 +50,15 @@ def job(name, out, first, last, *extra, step=1):
         cmd += ["-j", str(step)]
     cmd += ["-o", os.path.join(out, name + "_"), "-a"]
     return {"name": name, "cmd": cmd, "frames": list(range(first, last + 1, step)),
+            "log": os.path.join(out, "logs", name + ".log")}
+
+
+def list_job(name, out, frames):
+    """An "Only frames" job, built by the add-on's own jobs.render_command."""
+    cmd = jobs.render_command(sys.executable, "fake.blend", frames[0], frames[-1],
+                              os.path.join(out, name + "_"), frame_list=frames)
+    cmd.insert(1, FAKE)
+    return {"name": name, "cmd": cmd, "frames": list(frames),
             "log": os.path.join(out, "logs", name + ".log")}
 
 
@@ -111,6 +121,22 @@ check("b was stopped and resumed",
 check("b: only every 3rd frame, each exactly once", renders(out, "b"),
       {f: 1 for f in range(1, 41, 3)})
 check("a: untouched by b's step", renders(out, "a"), {f: 1 for f in range(1, 4)})
+
+print("\nOnly frames (SubScene override), stopped and resumed with what is left")
+out = os.path.join(tmp, "list")
+said = []
+t0 = time.time()
+wanted = [1, 2, 3, 7, 10, 11, 12, 13, 20, 25, 26, 30, 31, 32, 40]
+# a's frames are slow, so b - the job with the newest frame - is the one stopped
+res = runner.run({"jobs": [job("a", out, 1, 3, "--frame-s", "3"), list_job("b", out, wanted)],
+                  "parallel": 2, "gpu_warn": 66, "gpu_stop": 90, "pause_on_error": False},
+                 say=said.append, gpu_reader=gpu_script([(0, 40), (4, 95), (7, 30)]))
+print("   (%.1fs)  %s" % (time.time() - t0, " | ".join(said)))
+check("both jobs end OK", sorted((n, c) for n, c, _t, _x in res), [("a", 0), ("b", 0)])
+check("b was stopped and resumed",
+      (sum("stopping b" in m for m in said), any("started   b (resuming at frame" in m for m in said)),
+      (1, True))
+check("b: exactly the listed frames, each once", renders(out, "b"), {f: 1 for f in wanted})
 
 print("\nOut of GPU memory: killed at once, retried alone")
 out = os.path.join(tmp, "oom")

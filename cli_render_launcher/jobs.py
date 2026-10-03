@@ -7,6 +7,7 @@ Every rule here was checked against real command-line renders in Blender
 import hashlib
 import json
 import os
+import re
 import tempfile
 import time
 
@@ -67,8 +68,70 @@ def output_name(base, timestamp, include_range, start, end, is_video):
     return name
 
 
+# One item of an "Only frames" list: 12, 100-120 or 100..120.
+_FRAME_ITEM = re.compile(r"^(\d+)(?:(?:\.\.|-)(\d+))?$")
+
+
+def parse_frames(text, start=None, end=None):
+    """'12, 40, 100-120' -> ([12, 40, 100, ..., 120], None), or (None, error).
+
+    Items are separated by commas or spaces; a range is a-b or a..b, both
+    ends included. Overlaps and repeats are merged. With start/end given,
+    every frame must lie inside them: a SubScene stays "this shot".
+
+    No negative frames: Blender's -f reads "-5" as "5 before the end", so a
+    list cannot name frame -5 at all.
+    """
+    norm = re.sub(r"\s*\.\.\s*", "..", (text or "").strip())
+    norm = re.sub(r"(\d)\s*-\s*(\d)", r"\1-\2", norm)
+    tokens = [t for t in re.split(r"[\s,;]+", norm) if t]
+    if not tokens:
+        return None, "no frames given"
+    frames = set()
+    for tok in tokens:
+        m = _FRAME_ITEM.match(tok)
+        if not m:
+            if re.match(r"^-\d", tok):
+                return None, "'%s': negative frames cannot be listed" % tok
+            return None, "'%s' is not a frame or a range (like 12 or 100-120)" % tok
+        a = int(m.group(1))
+        b = int(m.group(2)) if m.group(2) is not None else a
+        if a > b:
+            return None, "'%s': the range goes backwards" % tok
+        if start is not None and end is not None and (a < start or b > end):
+            return None, "frame %d is outside this SubScene (%d-%d)" % (
+                a if a < start else b, start, end)
+        frames.update(range(a, b + 1))
+    return sorted(frames), None
+
+
+def frames_arg(frames):
+    """[12, 40, 100, 101, 102] -> '12,40,100..102': the value of Blender's -f.
+
+    Runs of three or more consecutive frames become a..b; no spaces (the -f
+    syntax does not allow them).
+    """
+    out, run = [], []
+    for f in sorted(set(frames)):
+        if run and f == run[-1] + 1:
+            run.append(f)
+            continue
+        if run:
+            out.append(_run_text(run))
+        run = [f]
+    if run:
+        out.append(_run_text(run))
+    return ",".join(out)
+
+
+def _run_text(run):
+    if len(run) >= 3:
+        return "%d..%d" % (run[0], run[-1])
+    return ",".join(str(f) for f in run)
+
+
 def render_command(blender, blend, start, end, output_path=None, scene=None,
-                   frame_step=None, python_expr=None):
+                   frame_step=None, python_expr=None, frame_list=None):
     """Command line for one render job.
 
     `output_path` is None when the scene's Save Output is off: -o is then
@@ -87,18 +150,26 @@ def render_command(blender, blend, start, end, output_path=None, scene=None,
     `python_expr` (see override_expr) runs after -S, so in the scene being
     rendered, and before -a. --python-exit-code makes a failing override end
     the render instead of rendering with the wrong settings.
+
+    `frame_list` (an "Only frames" override) replaces -s/-e/-j/-a with
+    `-f 12,40,100..120`, always LAST: Blender renders the moment it reads
+    -f, so -o has to come before it.
     """
     cmd = [blender, "-b", blend]
     if scene:
         cmd += ["-S", scene]
     if python_expr:
         cmd += ["--python-exit-code", str(OVERRIDE_FAILED_CODE), "--python-expr", python_expr]
-    cmd += ["-s", str(start), "-e", str(end)]
-    if frame_step and frame_step > 1:
-        cmd += ["-j", str(frame_step)]
+    if not frame_list:
+        cmd += ["-s", str(start), "-e", str(end)]
+        if frame_step and frame_step > 1:
+            cmd += ["-j", str(frame_step)]
     if output_path is not None:
         cmd += ["-o", output_path]
-    cmd.append("-a")
+    if frame_list:
+        cmd += ["-f", frames_arg(frame_list)]
+    else:
+        cmd.append("-a")
     return cmd
 
 
@@ -106,7 +177,8 @@ def render_command(blender, blend, start, end, output_path=None, scene=None,
 OVERRIDE_FAILED_CODE = 77
 
 
-def override_expr(scene_name, samples_path=None, samples=0, camera=None):
+def override_expr(scene_name, samples_path=None, samples=0, camera=None,
+                  main_output_off=False):
     """One line of Python applying a SubScene's overrides, or None.
 
     Runs inside the background render only: the .blend (or its snapshot) is
@@ -123,6 +195,11 @@ def override_expr(scene_name, samples_path=None, samples=0, camera=None):
     frame of an animation render, so setting the camera alone would be undone
     at the first marker. The markers lose their camera link - in this render
     only - and then the camera is set.
+
+    `main_output_off` turns the scene's Save Output (Blender 5.1+) off: an
+    "Only frames" render into a VIDEO renders each frame on its own, and each
+    one replaced the last - measured on 5.2.2, a 5-frame list left a 1-frame
+    mp4. The compositor's File Output nodes still write every frame.
     """
     # ascii(), not repr(): names with accents become \xe9 escapes, so the
     # argument itself is plain ASCII whatever the console's code page.
@@ -133,6 +210,8 @@ def override_expr(scene_name, samples_path=None, samples=0, camera=None):
         parts.append("c=s.objects[%s]" % ascii(camera))
         parts.append("[setattr(m,'camera',None) for m in s.timeline_markers]")
         parts.append("s.camera=c")
+    if main_output_off:
+        parts.append("s.render.save_output=False")
     if not parts:
         return None
     # The confirmation names nothing the user typed: printing a name with an
@@ -141,15 +220,24 @@ def override_expr(scene_name, samples_path=None, samples=0, camera=None):
                      + ["print('CLI Render: SubScene overrides applied')"])
 
 
-def override_summary(samples=0, frame_step=1, camera=None):
-    """'16 samples · every 4th frame · camera CloseUp', or '' with none."""
+def override_summary(samples=0, frame_step=1, camera=None, frames=None,
+                     main_output_off=False):
+    """'16 samples · every 4th frame · camera CloseUp', or '' with none.
+
+    `frames` (an "Only frames" list) replaces the frame step, as in the render.
+    """
     bits = []
     if samples:
         bits.append("%d samples" % samples)
-    if frame_step and frame_step > 1:
+    if frames:
+        text = frames_arg(frames).replace("..", "-").replace(",", ", ")
+        bits.append("frames %s" % text if len(text) <= 24 else "%d chosen frames" % len(frames))
+    elif frame_step and frame_step > 1:
         bits.append("every %s frame" % ordinal(frame_step))
     if camera:
         bits.append("camera %s" % camera)
+    if main_output_off:
+        bits.append("no main video")
     return " · ".join(bits)
 
 
