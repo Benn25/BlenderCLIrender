@@ -50,14 +50,16 @@ import scheduler  # noqa: E402
 import webui  # noqa: E402
 
 GPU_POLL_S = 5.0
-# The queue window outlives the queue by this long, so a page polling when the
-# last frame lands gets one more answer and settles on the finished state
-# instead of a connection error. Deliberately short: the timer is NOT a daemon
-# (a daemon one would die with the process and linger for nothing), so this is
-# also how long the queue console stays open after its last job. One poll
-# interval plus margin is all that is needed - after it the page says the queue
-# has finished rather than showing an error.
-WEB_UI_LINGER_S = 5.0
+# After the last job the queue window stays served while it is OPEN: the page
+# asks for the state every second, so the queue waits until those requests
+# have stopped for WEB_UI_IDLE_S (the window was closed), and never longer
+# than WEB_UI_MAX_LINGER_S (a tab forgotten in the background). Until 5.14.1
+# it stopped 5 s after the last job, and every thumbnail, file list or video
+# not already loaded in the page failed from then on.
+# Browsers slow a background tab's timers down to about once a minute, hence
+# an idle limit well above that.
+WEB_UI_IDLE_S = 90.0
+WEB_UI_MAX_LINGER_S = 2 * 3600.0
 STOP_POLL_S = 0.3
 _print_lock = threading.Lock()
 
@@ -570,20 +572,40 @@ def run(spec, say=_say, gpu_reader=gpu_monitor.read):
             say("Another launch of this file will start its own queue (%s)" % exc)
     sch.intake = inbox
     try:
-        return sch.run()
+        results = sch.run()
     finally:
+        # The inbox goes first: from now on a new launch of this file starts
+        # a queue of its own, even while this one's window is still served.
         if inbox is not None:
             inbox.discard()
-        if stop_ui:
-            # Held open briefly so a page mid-poll sees the final state rather
-            # than a connection error the instant the last frame lands.
-            threading.Timer(WEB_UI_LINGER_S, stop_ui).start()
         for path in spec.get("cleanup", []):
             try:
                 os.remove(path)
             except OSError:
                 pass
         shutil.rmtree(workdir, ignore_errors=True)
+    report(results, say)
+    if stop_ui:
+        linger(stop_ui, say)
+    return results
+
+
+def report(results, say=_say):
+    """The final tally, in the queue's log (and console, if it has one)."""
+    failed = [r for r in results if r[1] != 0]
+    say("")
+    say("Done: %d OK, %d failed" % (len(results) - len(failed), len(failed)))
+    for name, code, _took, note in failed:
+        say("   %s: %s" % (name, note or "exit code %s" % code))
+
+
+def linger(stop_ui, say=_say, sleep=time.sleep, clock=time.monotonic):
+    """Keep the finished queue's window served until it is closed."""
+    say("The queue window stays available until it is closed.")
+    t0 = clock()
+    while stop_ui.idle_s() < WEB_UI_IDLE_S and clock() - t0 < WEB_UI_MAX_LINGER_S:
+        sleep(1.0)
+    stop_ui()
 
 
 def _set_title(title):
@@ -649,17 +671,13 @@ def main(argv):
         _pause("Press Enter to close...")
         return 1
     _set_title("CLI Render queue")
-    results = run(spec)
+    results = run(spec)             # prints the final tally itself
     try:
         os.remove(jobfile)
     except OSError:
         pass
 
     failed = [r for r in results if r[1] != 0]
-    _say("")
-    _say("Done: %d OK, %d failed" % (len(results) - len(failed), len(failed)))
-    for name, code, _took, note in failed:
-        _say("   %s: %s" % (name, note or "exit code %s" % code))
     if failed and spec.get("pause_on_error", True):
         _pause("Press Enter to close...")
     return 1 if failed else 0

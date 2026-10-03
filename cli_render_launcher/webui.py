@@ -483,6 +483,7 @@ class _Handler(BaseHTTPRequestHandler):
     baselines = None     # {prefix: {name: (mtime_ns, size)}} from snapshot()
     state_fn = None
     page = b""
+    seen = None          # [time of the last /api/state request]
 
     def log_message(self, *a):          # never scribble over the render console
         pass
@@ -516,6 +517,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(self.page, "text/html; charset=utf-8")
             return
         if path == "/api/state":
+            if self.seen is not None:
+                self.seen[0] = time.time()  # the window is open: keep serving it
             try:
                 data = self.state_fn()
             except Exception as exc:
@@ -585,13 +588,19 @@ def serve(state_fn, page_html, port=0, jobs_fn=None, baselines=None):
 
     Never raises: a port the OS will not give us is a reason to carry on
     without a window, not to lose a render queue.
+
+    `stop.idle_s()` is how long since the page last asked for the state: the
+    runner keeps a finished queue's window alive until that grows long, i.e.
+    until the window is closed.
     """
+    seen = [time.time()]
     handler = type("_BoundHandler", (_Handler,),
                    {"state_fn": staticmethod(state_fn),
                     "jobs_fn": staticmethod(jobs_fn or (lambda: [])),
                     # the SAME dict the runner extends when a launch joins:
                     # `baselines or {}` would swap an empty one for a copy
                     "baselines": baselines if baselines is not None else {},
+                    "seen": seen,
                     "page": page_html.encode("utf-8")})
     # The caller normally names a port it already reserved, so the address can
     # be shown in Blender before the queue even starts. If something took it in
@@ -614,6 +623,7 @@ def serve(state_fn, page_html, port=0, jobs_fn=None, baselines=None):
             srv.server_close()
         except Exception:
             pass
+    stop.idle_s = lambda: time.time() - seen[0]
     return "http://%s:%d/" % (HOST, srv.server_address[1]), stop
 
 
@@ -1571,7 +1581,7 @@ async function tick(){
       if (!seen.has(uid)){ cards.get(uid).el.remove(); cards.delete(uid); }
     });
     setText(document.getElementById('foot'), s.queue.all_done
-      ? 'all jobs finished — you can close this window'
+      ? 'all jobs finished — the images stay available while this window is open'
       : 'updating every second · click a job for details');
   }
   setTimeout(tick, __POLL__);
